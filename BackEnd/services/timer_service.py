@@ -3,7 +3,7 @@ from BackEnd.repos import session_repo
 
 class TimerService(QObject):
 	tick = Signal(int)  # emits elapsed seconds
-	state_changed = Signal(str)  # emits 'running', 'paused', 'stopped'
+	state_changed = Signal(str)  # emits 'idle', 'running', 'paused', 'stopped'
 
 	def __init__(self):
 		super().__init__()
@@ -25,19 +25,17 @@ class TimerService(QObject):
 		self._timer.start()
 		self.state_changed.emit('running')
 
-	def pause(self):
-		if not self.running or self.paused:
+	def pause_resume(self):
+		if not self.running:
 			return
-		self._timer.stop()
-		self.paused = True
-		self.state_changed.emit('paused')
-
-	def resume(self):
-		if not self.running or not self.paused:
-			return
-		self._timer.start()
-		self.paused = False
-		self.state_changed.emit('running')
+		if self.paused:
+			self._timer.start()
+			self.paused = False
+			self.state_changed.emit('running')
+		else:
+			self._timer.stop()
+			self.paused = True
+			self.state_changed.emit('paused')
 
 	def stop(self):
 		if not self.running:
@@ -48,7 +46,19 @@ class TimerService(QObject):
 		self.running = False
 		self.paused = False
 		self.session_id = None
-		self.state_changed.emit('stopped')
+		self.elapsed_sec = 0
+		self.state_changed.emit('idle')
+
+	def force_end(self):
+		"""Force end session without UI reset (for confirmation dialog)."""
+		if self.running and self.session_id is not None:
+			self._timer.stop()
+			session_repo.stop_session(self.session_id)
+			self.running = False
+			self.paused = False
+			self.session_id = None
+			self.elapsed_sec = 0
+			self.state_changed.emit('idle')
 
 	def _on_tick(self):
 		self.elapsed_sec += 1
