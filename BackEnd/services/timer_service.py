@@ -64,17 +64,26 @@ class TimerService(QObject):
 		self.elapsed_sec += 1
 		self.tick.emit(self.elapsed_sec)
 
-	def resume_active_session(self):
-		"""If there's an active session in DB, resume it and set elapsed_sec."""
+	def resume_active_session(self, paused: bool = False):
+		"""If there's an active session in DB, resume it and set elapsed_sec.
+
+		Backwards-compatible: accepts optional keyword `paused` which, when True,
+		restores the session but does not start the internal timer.
+		"""
 		active = session_repo.active_session()
 		if active:
 			from datetime import datetime, timezone
 			start_utc = active['start_utc']
 			start_dt = datetime.fromisoformat(start_utc)
 			now = datetime.now(timezone.utc)
+			# compute elapsed as fallback; other code may persist elapsed_sec in DB
 			self.elapsed_sec = int((now - start_dt).total_seconds())
 			self.session_id = active['id']
 			self.running = True
-			self.paused = False
-			self._timer.start()
-			self.state_changed.emit('running')
+			self.paused = bool(paused)
+			if not self.paused:
+				self._timer.start()
+				self.state_changed.emit('running')
+			else:
+				self._timer.stop()
+				self.state_changed.emit('paused')

@@ -58,7 +58,7 @@ class MainWindow(QMainWindow):
 		# --- Sidebar Animation ---
 		from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QTimer
 		self.sidebar_anim = QPropertyAnimation(self.sidebar, b"maximumWidth")
-		self.sidebar_anim.setDuration(250)
+		self.sidebar_anim.setDuration(10)
 		self.sidebar_anim.setEasingCurve(QEasingCurve.InOutCubic)
 
 		# --- Layout ---
@@ -147,13 +147,11 @@ class MainWindow(QMainWindow):
 		# Buttons row
 		btn_layout = QHBoxLayout()
 		btn_layout.setSpacing(24)
-		self.start_btn = QPushButton("Start Session")
-		self.start_btn.setObjectName("StartBtn")
-		self.pause_resume_btn = QPushButton("Pause")
-		self.pause_resume_btn.setObjectName("PauseResumeBtn")
+		self.start_pause_btn = QPushButton("Start Session")
+		self.start_pause_btn.setObjectName("StartBtn")
 		self.end_btn = QPushButton("End Session")
 		self.end_btn.setObjectName("EndBtn")
-		for btn in (self.start_btn, self.pause_resume_btn, self.end_btn):
+		for btn in (self.start_pause_btn, self.end_btn):
 			btn.setMinimumHeight(56)
 			btn_layout.addWidget(btn)
 		timer_card_layout.addSpacing(24)
@@ -174,8 +172,7 @@ class MainWindow(QMainWindow):
 		self.timer_service.state_changed.connect(self._on_state)
 		self._update_today_label()
 
-		self.start_btn.clicked.connect(self._start)
-		self.pause_resume_btn.clicked.connect(self._pause_resume)
+		self.start_pause_btn.clicked.connect(self._start_pause)
 		self.end_btn.clicked.connect(self._end)
 
 		self._set_buttons("idle")
@@ -299,35 +296,34 @@ class MainWindow(QMainWindow):
 
 
 	def _set_buttons(self, state):
-		# Only three buttons: Start, Pause/Resume, End
-		self.start_btn.setEnabled(state in ("idle",))
-		self.pause_resume_btn.setEnabled(state in ("running", "paused"))
-		self.end_btn.setEnabled(state in ("running", "paused"))
-		if state == "running":
-			self.start_btn.setStyleSheet("")
-			self.pause_resume_btn.setText("Pause")
-			self.pause_resume_btn.setStyleSheet("")
-			self.end_btn.setStyleSheet("")
+		# Only two buttons: Start/Pause and End
+		if state == "idle":
+			self.start_pause_btn.setEnabled(True)
+			self.start_pause_btn.setText("Start Session")
+			self.end_btn.setEnabled(False)
+		elif state == "running":
+			self.start_pause_btn.setEnabled(True)
+			self.start_pause_btn.setText("Pause")
+			self.end_btn.setEnabled(True)
 		elif state == "paused":
-			self.pause_resume_btn.setText("Resume")
-			self.pause_resume_btn.setStyleSheet("")
-			self.end_btn.setStyleSheet("")
-			self.start_btn.setStyleSheet("")
+			self.start_pause_btn.setEnabled(True)
+			self.start_pause_btn.setText("Resume")
+			self.end_btn.setEnabled(True)
 		else:
-			self.start_btn.setStyleSheet("")
-			self.pause_resume_btn.setText("Pause")
-			self.pause_resume_btn.setStyleSheet("")
-			self.end_btn.setStyleSheet("")
+			self.start_pause_btn.setEnabled(True)
+			self.start_pause_btn.setText("Start Session")
+			self.end_btn.setEnabled(False)
 
-	def _start(self):
-		self.timer_service.start()
-		self._set_buttons("running")
-
-	def _pause_resume(self):
-		self.timer_service.pause_resume()
-		if self.timer_service.paused:
+	def _start_pause(self):
+		# Use running/paused attributes from TimerService
+		if not self.timer_service.running:
+			self.timer_service.start()
+			self._set_buttons("running")
+		elif self.timer_service.running and not self.timer_service.paused:
+			self.timer_service.pause_resume()
 			self._set_buttons("paused")
-		else:
+		elif self.timer_service.running and self.timer_service.paused:
+			self.timer_service.pause_resume()
 			self._set_buttons("running")
 
 	def _end(self):

@@ -70,48 +70,49 @@ QHeaderView::section {
 }
 /* Study Tracker QSS Design Tokens */
 QMainWindow {
-    background: #d9e6fc;
+    background: #b3d1fa;
 }
 QWidget {
     font-family: 'Inter', 'Manrope', Arial, sans-serif;
     color: #133c62;
 }
 QListWidget {
-    background: #133A62;
+    background: #5EA1FF;
     border: none;
-    border-radius: 18px;
+    border-radius: 0px;
     min-width: 240px;
     max-width: 240px;
-    padding: 24px 0 24px 0;
+    padding: 0;
 }
 QListWidget::item {
     padding: 16px 0 16px 32px;
     margin: 0 0 12px 0;
     border-radius: 24px;
-    background: #fafaed;
+    background: #e7f0ff;
     color: #133c62;
     font-size: 16px;
     font-weight: 400;
 }
 QListWidget::item:selected {
-    background: #e7f0ff;
+    background: #fafaed;
     color: #133c62;
     border-left: 6px solid #5EA1FF;
     font-weight: 600;
 }
 QListWidget::item:hover {
-    background: #e7f0ff;
+    background: #d9e6fc;
     color: #133c62;
 }
 QLabel#TimerLabel {
     color: #133c62;
     font-size: 112px;
     font-weight: bold;
-    background: #b3d1fa;
-    border-radius: 24px;
+    background: #e7f0ff;
+    border-radius: 32px;
     padding: 40px 64px;
     margin: 0 0 32px 0;
     letter-spacing: 2px;
+    box-shadow: 0 2px 16px 0 rgba(19,60,98,0.04);
 }
 QPushButton#MenuBtn {
     min-width: 0;
@@ -124,7 +125,7 @@ QPushButton#MenuBtn {
     background: transparent;
 }
 QPushButton {
-    border-radius: 16px;
+    border-radius: 18px;
     font-size: 18px;
     font-weight: 600;
     padding: 0 32px;
@@ -133,35 +134,25 @@ QPushButton {
     margin: 0 16px;
     border: none;
     color: #133c62;
+    background: #5EA1FF;
+    transition: background 0.2s;
 }
-QPushButton#StartBtn {
+QPushButton#StartBtn, QPushButton#PauseResumeBtn, QPushButton#EndBtn {
     background: #5EA1FF;
     color: #fff;
+    border: none;
 }
-QPushButton#StartBtn:hover, QPushButton#StartBtn:pressed {
+QPushButton#StartBtn:hover, QPushButton#PauseResumeBtn:hover, QPushButton#EndBtn:hover,
+QPushButton#StartBtn:pressed, QPushButton#PauseResumeBtn:pressed, QPushButton#EndBtn:pressed {
     background: #4C92F5;
 }
-QPushButton#PauseResumeBtn {
-    background: #e7f0ff;
-    color: #133c62;
-}
-QPushButton#PauseResumeBtn:hover, QPushButton#PauseResumeBtn:pressed {
-    background: #dce3ed;
-}
-QPushButton#EndBtn {
-    background: #f7f9fc;
-    color: #133c62;
-    border: 2px solid #dce3ed;
-}
-QPushButton#EndBtn:hover, QPushButton#EndBtn:pressed {
-    background: #e7f0ff;
-}
 QLabel#TodayLabel {
-    background: #e7f0ff;
-    color: #133c62;
+    background: transparent;
+    color: #5EA1FF;
     border-radius: 16px;
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 500;
-    padding: 8px 24px;
-    margin: 0 32px 32px 0;
+    padding: 0;
+    margin: 0 32px 16px 0;
+    qproperty-alignment: 'AlignRight | AlignBottom';
 }
