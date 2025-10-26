@@ -63,6 +63,13 @@ class TimerService(QObject):
 	def _on_tick(self):
 		self.elapsed_sec += 1
 		self.tick.emit(self.elapsed_sec)
+		# persist periodically for crash-safety (every 5 seconds)
+		try:
+			if self.elapsed_sec % 5 == 0 and self.session_id is not None:
+				session_repo.update_elapsed(self.session_id, self.elapsed_sec)
+		except Exception:
+			# don't let DB issues break the timer loop
+			pass
 
 	def resume_active_session(self, paused: bool = False):
 		"""If there's an active session in DB, resume it and set elapsed_sec.
@@ -72,13 +79,16 @@ class TimerService(QObject):
 		"""
 		active = session_repo.active_session()
 		if active:
-			from datetime import datetime, timezone
-			start_utc = active['start_utc']
-			start_dt = datetime.fromisoformat(start_utc)
-			now = datetime.now(timezone.utc)
-			# compute elapsed as fallback; other code may persist elapsed_sec in DB
-			self.elapsed_sec = int((now - start_dt).total_seconds())
+			# prefer persisted elapsed_sec if available (exact saved seconds)
 			self.session_id = active['id']
+			if active.get('elapsed_sec') is not None:
+				self.elapsed_sec = int(active.get('elapsed_sec') or 0)
+			else:
+				from datetime import datetime, timezone
+				start_utc = active['start_utc']
+				start_dt = datetime.fromisoformat(start_utc)
+				now = datetime.now(timezone.utc)
+				self.elapsed_sec = int((now - start_dt).total_seconds())
 			self.running = True
 			self.paused = bool(paused)
 			if not self.paused:

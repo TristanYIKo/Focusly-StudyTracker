@@ -10,7 +10,9 @@ CREATE TABLE IF NOT EXISTS sessions (
 	note TEXT,
 	client_id TEXT UNIQUE,         -- reserved for future sync
 	updated_at TEXT NOT NULL,      -- UTC ISO, touched on every update
-	deleted_at TEXT                -- null; reserved for soft deletes
+	deleted_at TEXT,               -- null; reserved for soft deletes
+	elapsed_sec INTEGER,           -- seconds elapsed for robust resume
+	source TEXT DEFAULT 'timer'    -- 'timer' or 'pomodoro'
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_local_date ON sessions(local_date);

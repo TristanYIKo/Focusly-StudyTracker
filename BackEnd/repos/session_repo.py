@@ -12,21 +12,45 @@ def connect():
 	conn.row_factory = sqlite3.Row
 	with open(SCHEMA_PATH, encoding="utf-8") as f:
 		conn.executescript(f.read())
+
+	# Migration: ensure new columns exist on older DBs
+	cur = conn.execute("PRAGMA table_info(sessions)")
+	cols = {r['name'] for r in cur.fetchall()}
+	if 'elapsed_sec' not in cols:
+		try:
+			conn.execute("ALTER TABLE sessions ADD COLUMN elapsed_sec INTEGER")
+		except Exception:
+			pass
+	if 'source' not in cols:
+		try:
+			conn.execute("ALTER TABLE sessions ADD COLUMN source TEXT DEFAULT 'timer'")
+		except Exception:
+			pass
 	return conn
 
-def start_session(subject="", note=""):
-	"""Start a new session and return session_id."""
+def start_session(subject="", note="", source="timer"):
+	"""Start a new session and return session_id. Source is 'timer' or 'pomodoro'."""
 	now_utc = utc_now_iso()
 	today = local_today_str()
 	with connect() as conn:
 		cur = conn.execute(
 			"""
-			INSERT INTO sessions (start_utc, local_date, subject, note, updated_at)
-			VALUES (?, ?, ?, ?, ?)
+			INSERT INTO sessions (start_utc, local_date, subject, note, updated_at, source)
+			VALUES (?, ?, ?, ?, ?, ?)
 			""",
-			(now_utc, today, subject, note, now_utc)
+			(now_utc, today, subject, note, now_utc, source)
 		)
 		return cur.lastrowid
+
+def update_elapsed(session_id, elapsed_sec):
+	"""Update the elapsed_sec and updated_at for an active session (no end_utc)."""
+	now = utc_now_iso()
+	with connect() as conn:
+		conn.execute(
+			"UPDATE sessions SET elapsed_sec=?, updated_at=? WHERE id=?",
+			(int(elapsed_sec), now, session_id)
+		)
+		conn.commit()
 
 def stop_session(session_id):
 	"""Stop session, set end_utc, duration_sec, updated_at. Returns duration_sec."""
@@ -53,7 +77,7 @@ def active_session():
 	"""Return dict for active session (end_utc IS NULL), or None."""
 	with connect() as conn:
 		cur = conn.execute(
-			"SELECT id, start_utc, local_date, subject FROM sessions WHERE end_utc IS NULL ORDER BY start_utc DESC LIMIT 1"
+			"SELECT id, start_utc, local_date, subject, source, elapsed_sec FROM sessions WHERE end_utc IS NULL ORDER BY start_utc DESC LIMIT 1"
 		)
 		row = cur.fetchone()
 		return dict(row) if row else None
