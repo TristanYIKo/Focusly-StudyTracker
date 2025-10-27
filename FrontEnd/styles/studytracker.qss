@@ -1,9 +1,9 @@
 QComboBox, QComboBox QAbstractItemView {
-    color: #fff;
-    background: #133c62;
+    color: #1E3A56;
+    background: #E2E8F0;
     border-radius: 8px;
     font-size: 16px;
-    border: 1px solid #5EA1FF;
+    border: 1px solid #C9D8E2;
     padding: 6px 12px;
     min-width: 140px;
 }
@@ -14,33 +14,33 @@ QTableWidget::item, QTableView::item {
 }
 /* Modern, clean table styling for data tab */
 QTableWidget, QTableView {
-    background: #133c62;
-    color: #fff;
-    gridline-color: #2d4a6a;
+    background: #E2E8F0;
+    color: #1E3A56;
+    gridline-color: #C9D8E2;
     border-radius: 16px;
     font-size: 16px;
     border: none;
-    selection-background-color: #1e4d7a;
-    selection-color: #fff;
+    selection-background-color: #C9D8E2;
+    selection-color: #1E3A56;
     outline: none;
 }
 
 QTableWidget::item, QTableView::item {
     background: transparent;
-    color: #fff;
+    color: #1E3A56;
     border: none;
     padding: 8px 12px;
 }
 
 QTableWidget::item:selected, QTableView::item:selected {
-    background: #1e4d7a;
-    color: #fff;
+    background: #C9D8E2;
+    color: #1E3A56;
     border-radius: 8px;
 }
 
 QHeaderView::section {
-    background: #1e4d7a;
-    color: #fff;
+    background: #E2E8F0;
+    color: #1E3A56;
     font-weight: 600;
     border: none;
     border-radius: 8px;
@@ -49,20 +49,20 @@ QHeaderView::section {
 }
 
 QTableCornerButton::section {
-    background: #1e4d7a;
+    background: #E2E8F0;
     border: none;
 }
 QTableWidget, QTableView {
-    background: #133c62;
-    color: #fff;
-    gridline-color: #dce3ed;
+    background: #E2E8F0;
+    color: #1E3A56;
+    gridline-color: #C9D8E2;
     border-radius: 16px;
     font-size: 16px;
 }
 
 QHeaderView::section {
-    background: #e7f0ff;
-    color: #133c62;
+    background: #E2E8F0;
+    color: #1E3A56;
     font-weight: bold;
     border: none;
     border-radius: 8px;
@@ -70,49 +70,61 @@ QHeaderView::section {
 }
 /* Study Tracker QSS Design Tokens */
 QMainWindow {
-    background: #b3d1fa;
+    background: #A7BCCC;
 }
 QWidget {
     font-family: 'Inter', 'Manrope', Arial, sans-serif;
-    color: #133c62;
+    color: #1E3A56;
 }
 QListWidget {
-    background: #5EA1FF;
+    background: #E2E8F0;
     border: none;
-    border-radius: 0px;
+    /* Rounded only on the left edge to create a soft modern look */
+    border-top-left-radius: 16px;
+    border-bottom-left-radius: 16px;
+    border-top-right-radius: 0px;
+    border-bottom-right-radius: 0px;
     min-width: 240px;
     max-width: 240px;
     padding: 0;
 }
 QListWidget::item {
-    padding: 16px 0 16px 32px;
+    padding: 12px 0 12px 32px;
     margin: 0 0 12px 0;
     border-radius: 24px;
-    background: #e7f0ff;
-    color: #133c62;
+    background: transparent; /* keep list background controlled by parent */
+    color: #1E3A56;
     font-size: 16px;
     font-weight: 400;
 }
+
+/* Subtle active indicator: low-contrast accent bar on the left, no heavy background */
 QListWidget::item:selected {
-    background: #fafaed;
-    color: #133c62;
-    border-left: 6px solid #5EA1FF;
+    background: transparent;
+    color: #1E3A56;
+    border-left: 6px solid rgba(143,174,196,0.18); /* low-contrast calm accent */
     font-weight: 600;
 }
+
+/* Gentle hover: slight tint using low-alpha accent color */
 QListWidget::item:hover {
-    background: #d9e6fc;
-    color: #133c62;
+    background: rgba(143,174,196,0.06);
+    color: #1E3A56;
 }
+
+/* Remove focus outlines and selection highlights to avoid text/box flashing */
+QListWidget::item:focus { outline: none; }
+QListWidget { selection-background-color: transparent; }
 QLabel#TimerLabel {
-    color: #133c62;
+    color: #1E3A56;
     font-size: 112px;
     font-weight: bold;
-    background: #e7f0ff;
+    background: #C9D8E2;
     border-radius: 32px;
     padding: 40px 64px;
     margin: 0 0 32px 0;
     letter-spacing: 2px;
-    box-shadow: 0 2px 16px 0 rgba(19,60,98,0.04);
+    box-shadow: 0 6px 22px 0 rgba(30,58,86,0.06);
 }
 QPushButton#MenuBtn {
     min-width: 0;
@@ -124,6 +136,24 @@ QPushButton#MenuBtn {
     border: none;
     background: transparent;
 }
+/* Ensure the MenuButton (objectName set in code) is exactly 50x50, fully transparent,
+   with no extra padding, and a subtle hover outline to indicate interactivity. */
+QPushButton#MenuButton {
+    min-width: 50px;
+    max-width: 50px;
+    min-height: 50px;
+    max-height: 50px;
+    padding: 0;
+    margin: 0;
+    border: none;
+    background: transparent;
+    color: #1E3A56; /* icon color fallback */
+}
+QPushButton#MenuButton:hover {
+    /* subtle glow/outline without changing the background */
+    border: 2px solid rgba(30,58,86,0.06);
+    border-radius: 8px;
+}
 QPushButton {
     border-radius: 18px;
     font-size: 18px;
@@ -133,22 +163,22 @@ QPushButton {
     min-height: 56px;
     margin: 0 16px;
     border: none;
-    color: #133c62;
-    background: #5EA1FF;
-    transition: background 0.2s;
+    color: #ffffff;
+    background: #8FAEC4;
+    transition: background 0.18s ease-in-out;
 }
 QPushButton#StartBtn, QPushButton#PauseResumeBtn, QPushButton#EndBtn {
-    background: #5EA1FF;
-    color: #fff;
+    background: #8FAEC4;
+    color: #ffffff;
     border: none;
 }
 QPushButton#StartBtn:hover, QPushButton#PauseResumeBtn:hover, QPushButton#EndBtn:hover,
 QPushButton#StartBtn:pressed, QPushButton#PauseResumeBtn:pressed, QPushButton#EndBtn:pressed {
-    background: #4C92F5;
+    background: #7B9BB0;
 }
 QLabel#TodayLabel {
     background: transparent;
-    color: #5EA1FF;
+    color: #1E3A56;
     border-radius: 16px;
     font-size: 14px;
     font-weight: 500;
@@ -156,3 +186,96 @@ QLabel#TodayLabel {
     margin: 0 32px 16px 0;
     qproperty-alignment: 'AlignRight | AlignBottom';
 }
+
+/* To-Do tab styles */
+/* Remove the visible container so only individual task items are boxed */
+QWidget#TodoContainer {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+QListWidget#TodoList {
+    background: transparent;
+    border: none;
+}
+
+/* Each todo item is now a boxed card-like row */
+QWidget#TodoItem {
+    background: #F7FAFC;
+    border-radius: 12px;
+    border: 2px dotted rgba(30,58,86,0.12); /* same dotted style as Add box */
+    padding: 12px;
+    margin: 6px 0;
+    /* subtle shadow to separate items from background */
+    box-shadow: 0 6px 18px 0 rgba(30,58,86,0.04);
+    min-height: 96px; /* doubled height relative to Add box */
+}
+
+QPushButton#TodoCheck {
+    border-radius: 10px;
+    background: transparent;
+    border: 2px solid rgba(30,58,86,0.12);
+}
+QPushButton#TodoCheck:checked {
+    background: #8FAEC4;
+    border: 2px solid #8FAEC4;
+}
+QLabel#TodoLabel {
+    color: #1E3A56;
+}
+QPushButton#TodoMenuBtn {
+    background: transparent;
+    border: none;
+    color: rgba(30,58,86,0.6);
+}
+QLineEdit#TodoAddBox {
+    border: 2px dotted rgba(30,58,86,0.12);
+    border-radius: 12px;
+    padding: 10px 12px;
+    color: #1E3A56;
+    background: #F7FAFC; /* match task item background for a unified look */
+    transition: background 120ms ease-in-out;
+}
+QLineEdit#TodoAddBox:hover {
+    background: rgba(143,174,196,0.04);
+}
+
+/* Remove native focus/highlight for the Add Task box and todo controls.
+   Replace the platform focus rectangle with a subtle calm-styled outline
+   so the control doesn't show the sharp native highlight seen on Windows. */
+QLineEdit#TodoAddBox:focus {
+    /* keep the dotted border but remove any native focus painting */
+    background: rgba(143,174,196,0.04);
+    border: 2px dotted rgba(30,58,86,0.12);
+}
+
+/* Ensure buttons don't show a focus outline or glow */
+QPushButton#TodoMenuBtn:focus, QPushButton#TodoCheck:focus, QPushButton:focus {
+    outline: none;
+    border: none;
+    background: transparent;
+}
+
+/* Also avoid selection/active rectangles on widgets inside the container */
+QWidget#TodoContainer:focus { outline: none; }
+
+/* === Global: remove native focus rectangle / highlight ===
+   Prevent the sharp native focus painting on Windows (rounded inner box)
+   from appearing on interactive controls throughout the app. This
+   keeps keyboard focus reachable but eliminates the visual flashing
+   focus rectangle that clashes with our calm theme. */
+QWidget:focus, QPushButton:focus, QToolButton:focus, QLineEdit:focus, QTextEdit:focus,
+QComboBox:focus, QAbstractItemView:focus, QListWidget::item:focus, QTableWidget:focus,
+QSpinBox:focus, QScrollBar:focus {
+    outline: none;
+    border: none;
+    background: transparent;
+}
+
+/* Specifically ensure list items don't get a focus rect when clicked */
+QListWidget::item:focus { background: transparent; }
+
+/* Buttons: remove native focus ring but keep subtle hover/active visuals */
+QPushButton:focus { box-shadow: none; }
+

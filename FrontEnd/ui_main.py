@@ -10,7 +10,7 @@ from BackEnd.services.timer_service import TimerService
 from BackEnd.repos import session_repo
 from BackEnd.core.clock import fmt_hms
 from FrontEnd.styles.design_tokens import COLORS, FONTS
-from FrontEnd.components.footer_today import FooterToday
+
 
 class MainWindow(QMainWindow):
 	def __init__(self):
@@ -33,11 +33,14 @@ class MainWindow(QMainWindow):
 		icon_pixmap = QPixmap(50, 50)
 		icon_pixmap.fill(Qt.transparent)
 		painter = QPainter(icon_pixmap)
-		pen = QPen(QColor("#133c62"))
-		pen.setWidth(4)
+		painter.setRenderHint(QPainter.Antialiasing)
+		pen = QPen(QColor("#1E3A56"))
+		pen.setWidth(3)
+		pen.setCapStyle(Qt.RoundCap)
 		painter.setPen(pen)
-		for y in [12, 20, 28]:
-			painter.drawLine(20, y, 50, y)
+		# draw three centered horizontal lines with small vertical padding
+		for y in [14, 25, 36]:
+			painter.drawLine(10, y, 40, y)
 		painter.end()
 		self.menu_btn.setIcon(QIcon(icon_pixmap))
 		self.menu_btn.setIconSize(icon_pixmap.size())
@@ -45,21 +48,40 @@ class MainWindow(QMainWindow):
 		# --- Sidebar (hidden by default) ---
 		self.sidebar = QListWidget()
 		self.sidebar.setFixedWidth(240)
+		# vertical spacing between items
 		self.sidebar.setSpacing(16)
 		self.sidebar.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 		self.sidebar.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 		self.sidebar.addItem(QListWidgetItem("Timer"))
 		self.sidebar.addItem(QListWidgetItem("Pomodoro"))
 		self.sidebar.addItem(QListWidgetItem("Study History"))
+		self.sidebar.addItem(QListWidgetItem("To-Do"))
 		self.sidebar.setCurrentRow(0)
 		self.sidebar.setMaximumWidth(0)
 		self.sidebar.setVisible(False)
 		self._sidebar_open = False
 
+		# Ensure the sidebar items start below the fixed Menu Button so they
+		# don't overlap. Compute top padding based on the menu button height
+		# so the first tab visually aligns with the bottom edge of the button.
+		try:
+			menu_h = self.menu_btn.height() if hasattr(self, 'menu_btn') else 50
+			# small extra gap so items don't touch the button
+			top_padding = menu_h + 8
+			# Apply widget-local stylesheet so we don't override global theme
+			self.sidebar.setStyleSheet(
+				f"QListWidget {{ padding-top: {top_padding}px; }}"
+				+ "QListWidget::item { padding: 12px 0 12px 32px; margin: 0 0 12px 0; }"
+			)
+		except Exception:
+			# Fallback: small padding
+			self.sidebar.setStyleSheet("QListWidget { padding-top: 64px; }")
+
 		# --- Sidebar Animation ---
 		from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QTimer
 		self.sidebar_anim = QPropertyAnimation(self.sidebar, b"maximumWidth")
-		self.sidebar_anim.setDuration(10)
+		# smooth slide duration for open/close
+		self.sidebar_anim.setDuration(220)
 		self.sidebar_anim.setEasingCurve(QEasingCurve.InOutCubic)
 
 		# --- Layout ---
@@ -67,51 +89,134 @@ class MainWindow(QMainWindow):
 		topbar = QHBoxLayout()
 		topbar.setContentsMargins(0, 0, 0, 0)
 		topbar.setSpacing(0)
-		topbar.addWidget(self.menu_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+		# Reserve horizontal space for the fixed-position Menu Button so the
+		# topbar content aligns correctly while the button remains anchored.
+		topbar.addSpacing(self.menu_btn.width())
 		topbar.addStretch()
 		topbar_frame = QWidget()
 		topbar_frame.setLayout(topbar)
 		
-
+		# Build main content: sidebar on left (full height) and a right-side
+		# content widget that contains the topbar and the stacked pages.
 		self.stack = QStackedWidget()
 		self.timer_tab = self._build_timer_tab()
 		self.pomodoro_tab = self._build_pomodoro_tab()
 		self.history_tab = self._build_history_tab()
+		self.todo_tab = self._build_todo_tab()
 		self.stack.addWidget(self.timer_tab)
 		self.stack.addWidget(self.pomodoro_tab)
 		self.stack.addWidget(self.history_tab)
+		self.stack.addWidget(self.todo_tab)
 
 		main_layout = QHBoxLayout()
 		main_layout.setContentsMargins(0, 0, 0, 0)
 		main_layout.setSpacing(0)
+
+		# Right-side container holds topbar at the very top and the pages below it
+		content_widget = QWidget()
+		content_layout = QVBoxLayout()
+		content_layout.setContentsMargins(0, 0, 0, 0)
+		content_layout.setSpacing(0)
+		content_layout.addWidget(topbar_frame)
+		content_layout.addWidget(self.stack)
+		content_widget.setLayout(content_layout)
+
 		main_layout.addWidget(self.sidebar)
-		main_layout.addWidget(self.stack)
+		main_layout.addWidget(content_widget)
+
 		container = QWidget()
-		vbox = QVBoxLayout()
-		vbox.setContentsMargins(0, 0, 0, 0)
-		vbox.setSpacing(0)
-		vbox.addWidget(topbar_frame)
-		vbox.addLayout(main_layout)
-		container.setLayout(vbox)
+		container.setLayout(main_layout)
 		self.setCentralWidget(container)
 
 		self.sidebar.currentRowChanged.connect(self.stack.setCurrentIndex)
 		self.menu_btn.clicked.connect(self._toggle_sidebar)
 
+		# Make the menu button a fixed-position child so it stays anchored
+		# at the top-left regardless of layout changes.
+		self.menu_btn.setParent(container)
+		self.menu_btn.move(0, 0)
+		self.menu_btn.raise_()
+
+		# Install event filters for hover interactions
+		from PySide6.QtCore import QEvent, QTimer
+		self.menu_btn.installEventFilter(self)
+		self.sidebar.installEventFilter(self)
+
+		# Close timer: short delay to allow mouse moving between button and sidebar
+		self._sidebar_close_timer = QTimer(self)
+		self._sidebar_close_timer.setSingleShot(True)
+		self._sidebar_close_timer.setInterval(200)
+		self._sidebar_close_timer.timeout.connect(self._maybe_close_sidebar)
+
+		# Opacity effect for subtle fade during open/close
+		from PySide6.QtWidgets import QGraphicsOpacityEffect
+		from PySide6.QtCore import QPropertyAnimation
+		self._sidebar_opacity = QGraphicsOpacityEffect(self.sidebar)
+		self.sidebar.setGraphicsEffect(self._sidebar_opacity)
+		self._sidebar_op_anim = QPropertyAnimation(self._sidebar_opacity, b"opacity")
+		self._sidebar_op_anim.setDuration(180)
+		# start hidden
+		self._sidebar_opacity.setOpacity(0.0)
+
 	def closeEvent(self, event):
-		# Ensure running timer is paused and persisted when app closes so resume restores exact time
+		# On close: detect running or paused timers (main timer and pomodoro),
+		# persist their elapsed seconds to the DB and mark sessions stopped so
+		# they aren't treated as active on next start. Also save a lightweight
+		# Pomodoro UI snapshot for informational purposes (no auto-resume).
 		try:
-			if hasattr(self, 'timer_service') and self.timer_service.running:
-				# pause the timer (stops QTimer) and mark paused
-				if not self.timer_service.paused:
-					self.timer_service.pause_resume()
-				# persist current elapsed seconds
+			from BackEnd.repos import session_repo
+			# ---- Main timer handling ----
+			svc = getattr(self, 'timer_service', None)
+			if svc is not None:
 				try:
-					from BackEnd.repos import session_repo
-					if self.timer_service.session_id is not None:
-						session_repo.update_elapsed(self.timer_service.session_id, self.timer_service.elapsed_sec)
+					running = bool(getattr(svc, 'running', False))
+					paused = bool(getattr(svc, 'paused', False))
+					elapsed = int(getattr(svc, 'elapsed_sec', 0) or 0)
+					sid = getattr(svc, 'session_id', None)
+					# If timer is running, pause it first to stop QTimer
+					if running and not paused:
+						try:
+							svc.pause_resume()
+						except Exception:
+							pass
+					# Persist elapsed and stop session (if any)
+					if sid is not None:
+						try:
+							session_repo.update_elapsed(sid, elapsed)
+							session_repo.stop_session(sid)
+						except Exception:
+							pass
+					else:
+						# No session id - but there is elapsed time: create+finalize a session
+						if elapsed > 0:
+							try:
+								new_id = session_repo.start_session(source='timer')
+								session_repo.update_elapsed(new_id, elapsed)
+								session_repo.stop_session(new_id)
+							except Exception:
+								pass
 				except Exception:
 					pass
+			# ---- Pomodoro handling ----
+			try:
+				p_sid = getattr(self, 'pomo_session_id', None)
+				p_elapsed = int(getattr(self, 'pomo_elapsed', 0) or 0)
+				# If there's an open pomodoro DB session, persist and stop it
+				if p_sid is not None:
+					try:
+						session_repo.update_elapsed(p_sid, p_elapsed)
+						session_repo.stop_session(p_sid)
+					except Exception:
+						pass
+			except Exception:
+				pass
+		except Exception:
+			# If the repo import or DB ops fail, don't block closing
+			pass
+		# Save Pomodoro UI snapshot for informational display on next start
+		try:
+			if hasattr(self, '_save_pomodoro_state'):
+				self._save_pomodoro_state()
 		except Exception:
 			pass
 		super().closeEvent(event)
@@ -152,71 +257,44 @@ class MainWindow(QMainWindow):
 			return None
 
 	def _prompt_resume_pomodoro_if_needed(self):
-		# Called at startup after UI built
+		# On startup, load any saved pomodoro UI snapshot so the user can
+		# see the previous state, but do not prompt or auto-resume.
 		state = self._load_pomodoro_state()
 		if not state:
 			return
-		# if there was an active pomodoro running when app closed, ask to continue
-		if state.get('pomo_running'):
-			from PySide6.QtWidgets import QMessageBox
-			msg = QMessageBox(self)
-			msg.setWindowTitle("Resume Pomodoro?")
-			msg.setText("A Pomodoro was running when you closed the app. Do you want to continue it?")
-			msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-			msg.setDefaultButton(QMessageBox.Yes)
-			ret = msg.exec()
-			# restore state into UI and either start or keep paused based on answer
-			self.pomo_phase = state.get('pomo_phase', 'study')
-			self.pomo_elapsed = int(state.get('pomo_elapsed', 0) or 0)
-			self.pomo_cycle_count = int(state.get('pomo_cycle_count', 0) or 0)
-			self.pomo_session_id = state.get('pomo_session_id')
-			# determine target for phase
-			if self.pomo_phase == 'study':
-				self.pomo_target = self.POMO_STUDY_SEC
-			else:
-				self.pomo_target = self.POMO_LONG_BREAK_SEC if state.get('pomo_target') == self.POMO_LONG_BREAK_SEC else self.POMO_SHORT_BREAK_SEC
-			# update timer label
-			remaining = max(0, self.pomo_target - self.pomo_elapsed)
-			mins = remaining // 60
-			secs = remaining % 60
-			self.pomo_timer_label.setText(f"{mins:02d}:{secs:02d}")
-			self.pomo_phase_label.setText('Study Session' if self.pomo_phase == 'study' else 'Break Session')
-			if ret == QMessageBox.Yes:
-				# start running from exact elapsed
-				self.pomo_running = True
-				self.pomo_start_btn.setText('Pause')
-				self.pomo_timer.start()
-			else:
-				# keep stopped but reflect saved time
-				self.pomo_running = False
-				self.pomo_start_btn.setText('Start')
-			# clear saved state file once restored
-			try:
-				path = self._pomodoro_state_path()
-				if path.exists():
-					path.unlink()
-			except Exception:
-				pass
+		# Restore values into the UI but keep timers stopped.
+		self.pomo_phase = state.get('pomo_phase', 'study')
+		self.pomo_elapsed = int(state.get('pomo_elapsed', 0) or 0)
+		self.pomo_cycle_count = int(state.get('pomo_cycle_count', 0) or 0)
+		self.pomo_session_id = state.get('pomo_session_id')
+		# determine target for phase
+		if self.pomo_phase == 'study':
+			self.pomo_target = self.POMO_STUDY_SEC
+		else:
+			self.pomo_target = state.get('pomo_target', self.POMO_SHORT_BREAK_SEC)
+		# update timer label to reflect saved elapsed but do NOT start
+		remaining = max(0, self.pomo_target - self.pomo_elapsed)
+		mins = remaining // 60
+		secs = remaining % 60
+		self.pomo_timer_label.setText(f"{mins:02d}:{secs:02d}")
+		self.pomo_phase_label.setText('Study Session' if self.pomo_phase == 'study' else 'Break Session')
+		self.pomo_running = False
+		self.pomo_start_btn.setText('Start')
+		# remove saved snapshot now that we've reflected it in the UI
+		try:
+			path = self._pomodoro_state_path()
+			if path.exists():
+				path.unlink()
+		except Exception:
+			pass
 
 	def _toggle_sidebar(self):
+		# Toggle using the centralized open/close helpers so opacity and
+		# delayed close behavior are consistent.
 		if not self._sidebar_open:
-			self.sidebar.setVisible(True)
-			self.sidebar_anim.stop()
-			self.sidebar_anim.setStartValue(self.sidebar.maximumWidth())
-			self.sidebar_anim.setEndValue(240)
-			self.sidebar_anim.start()
-			self._sidebar_open = True
-			self._sidebar_anim_connected = False
+			self._open_sidebar()
 		else:
-			self.sidebar_anim.stop()
-			self.sidebar_anim.setStartValue(self.sidebar.maximumWidth())
-			self.sidebar_anim.setEndValue(0)
-			# Only connect if not already connected
-			if not getattr(self, '_sidebar_anim_connected', False):
-				self.sidebar_anim.finished.connect(self._hide_sidebar)
-				self._sidebar_anim_connected = True
-			self.sidebar_anim.start()
-			self._sidebar_open = False
+			self._close_sidebar()
 
 	def _hide_sidebar(self):
 		self.sidebar.setVisible(False)
@@ -227,6 +305,76 @@ class MainWindow(QMainWindow):
 			except TypeError:
 				pass
 			self._sidebar_anim_connected = False
+
+	def _open_sidebar(self):
+		if not self._sidebar_open:
+			self.sidebar.setVisible(True)
+			# slide open
+			self.sidebar_anim.stop()
+			self.sidebar_anim.setStartValue(self.sidebar.maximumWidth())
+			self.sidebar_anim.setEndValue(240)
+			# fade in
+			self._sidebar_op_anim.stop()
+			self._sidebar_op_anim.setStartValue(self._sidebar_opacity.opacity())
+			self._sidebar_op_anim.setEndValue(1.0)
+			self._sidebar_op_anim.start()
+			self.sidebar_anim.start()
+			self._sidebar_open = True
+
+	def _close_sidebar(self):
+		if self._sidebar_open:
+			# slide closed
+			self.sidebar_anim.stop()
+			self.sidebar_anim.setStartValue(self.sidebar.maximumWidth())
+			self.sidebar_anim.setEndValue(0)
+			# fade out
+			self._sidebar_op_anim.stop()
+			self._sidebar_op_anim.setStartValue(self._sidebar_opacity.opacity())
+			self._sidebar_op_anim.setEndValue(0.0)
+			self._sidebar_op_anim.start()
+			if not getattr(self, '_sidebar_anim_connected', False):
+				self.sidebar_anim.finished.connect(self._hide_sidebar)
+				self._sidebar_anim_connected = True
+			self.sidebar_anim.start()
+			self._sidebar_open = False
+
+	def _maybe_close_sidebar(self):
+		# only close if mouse isn't over the menu button or the sidebar
+		try:
+			if not (self.menu_btn.underMouse() or self.sidebar.underMouse()):
+				self._close_sidebar()
+		except Exception:
+			self._close_sidebar()
+
+	def eventFilter(self, obj, event):
+		from PySide6.QtCore import QEvent
+		# Hover enter on menu button -> open sidebar
+		if obj is self.menu_btn:
+			if event.type() == QEvent.Enter:
+				self._sidebar_close_timer.stop()
+				self._open_sidebar()
+				return False
+			if event.type() == QEvent.Leave:
+				self._sidebar_close_timer.start()
+				return False
+		# Hover enter/leave on sidebar: cancel/start close timer
+		if obj is self.sidebar:
+			if event.type() == QEvent.Enter:
+				self._sidebar_close_timer.stop()
+				return False
+			if event.type() == QEvent.Leave:
+				self._sidebar_close_timer.start()
+				return False
+		# Resize on the todo_list viewport -> update item widths
+		if hasattr(self, 'todo_list') and obj is self.todo_list.viewport():
+			if event.type() == QEvent.Resize:
+				# keep items sized to viewport
+				try:
+					self._update_todo_item_widths()
+				except Exception:
+					pass
+				return False
+		return super().eventFilter(obj, event)
 
 	def _build_timer_tab(self):
 		w = QWidget()
@@ -263,9 +411,7 @@ class MainWindow(QMainWindow):
 		outer.addWidget(timer_card, alignment=Qt.AlignmentFlag.AlignHCenter)
 		outer.addStretch()
 
-		# Today pill footer
-		self.footer_today = FooterToday("Today: 0m")
-		outer.addWidget(self.footer_today, alignment=Qt.AlignmentFlag.AlignRight)
+		# Removed Today footer for a minimal Timer page (layout remains centered)
 
 		w.setLayout(outer)
 
@@ -280,9 +426,9 @@ class MainWindow(QMainWindow):
 
 		self._set_buttons("idle")
 		self._pending_resume_check = False
-		self._check_resume_session()
-		# If there is a saved pomodoro state, prompt to restore after UI is ready
-		self._prompt_resume_pomodoro_if_needed()
+		# Do not prompt to resume previous sessions; previous timer/pomodoro
+		# data is persisted on close but we will not offer to continue it.
+		# Leave timers idle on startup.
 
 		return w
 
@@ -290,19 +436,22 @@ class MainWindow(QMainWindow):
 		w = QWidget()
 		layout = QVBoxLayout()
 		layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+		# Match margins used elsewhere for consistent visual rhythm
+		layout.setContentsMargins(32, 32, 32, 32)
 
-		# Time frame selector
+		# Time frame selector - place it at the right side for better balance.
 		timeframe_layout = QHBoxLayout()
+		# Push widgets to the right
+		timeframe_layout.addStretch()
 		timeframe_label = QLabel("Show study time for:")
 		self.timeframe_combo = QComboBox()
 		self.timeframe_combo.addItems(["Week", "Month"])
 		self.timeframe_combo.setCurrentIndex(0)  # Default to Week
 		self.timeframe_combo.setMinimumWidth(140)
-		self.timeframe_combo.setStyleSheet("color: #fff;")
-		timeframe_label.setStyleSheet("color: #fff;")
+		# Avoid hard-coded colors here so the global Calm theme controls text color
+		# Add widgets (label first, then combo) so they appear right-aligned.
 		timeframe_layout.addWidget(timeframe_label)
 		timeframe_layout.addWidget(self.timeframe_combo)
-		timeframe_layout.addStretch()
 		layout.addLayout(timeframe_layout)
 
 		# Bar chart (matplotlib)
@@ -396,6 +545,207 @@ class MainWindow(QMainWindow):
 		self._pomo_enter_phase('study', autostart=False)
 
 		return w
+
+	def _build_todo_tab(self):
+		from PySide6.QtWidgets import QListWidget, QListWidgetItem, QHBoxLayout, QLineEdit, QMenu, QInputDialog
+		from PySide6.QtGui import QIcon
+		from PySide6.QtCore import Qt
+
+		w = QWidget()
+		outer = QVBoxLayout()
+		outer.setContentsMargins(32, 32, 32, 32)
+		outer.setSpacing(12)
+
+		# Title
+		title = QLabel("To-Do")
+		title.setStyleSheet("font-size:20px; font-weight:600; color: #1E3A56;")
+		# Center the title horizontally above the list
+		outer.addWidget(title, alignment=Qt.AlignmentFlag.AlignHCenter)
+
+		# Task list (QListWidget with custom widgets)
+		self.todo_list = QListWidget()
+		self.todo_list.setObjectName("TodoList")
+		self.todo_list.setSpacing(8)
+		self.todo_list.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+		self.todo_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+		# Watch the viewport for resize so we can update item widths
+		self.todo_list.viewport().installEventFilter(self)
+
+		# Container that will host the list and the Add box; this is the
+		# single visible box centered on the page (rounded + shadow).
+		list_container = QWidget()
+		list_container.setObjectName("TodoContainer")
+		list_container_layout = QVBoxLayout()
+		list_container_layout.setContentsMargins(12, 12, 12, 12)
+		list_container_layout.setSpacing(8)
+		list_container.setLayout(list_container_layout)
+
+		# Ensure moderate width (~65% of initial window width)
+		try:
+			list_container.setMaximumWidth(int(self.width() * 0.65))
+		except Exception:
+			list_container.setMaximumWidth(700)
+
+		list_container_layout.addWidget(self.todo_list)
+		def make_task_widget(text, checked=False):
+			container = QWidget()
+			container.setObjectName("TodoItem")
+			lay = QHBoxLayout()
+			lay.setContentsMargins(12, 12, 12, 12)
+			lay.setSpacing(12)
+
+			# Check circle
+			check_btn = QPushButton()
+			check_btn.setCheckable(True)
+			check_btn.setFixedSize(20, 20)
+			check_btn.setObjectName("TodoCheck")
+			check_btn.setChecked(bool(checked))
+
+			# Make each task item a bit taller so items read as "length > height"
+			container.setMinimumHeight(64)
+
+			# Label
+			lbl = QLabel(text)
+			lbl.setWordWrap(True)
+			lbl.setObjectName("TodoLabel")
+			font = lbl.font()
+			font.setPointSize(14)
+			lbl.setFont(font)
+			if checked:
+				f = lbl.font()
+				f.setStrikeOut(True)
+				lbl.setFont(f)
+
+			# Spacer and menu
+			lay.addWidget(check_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
+			lay.addWidget(lbl)
+			lay.addStretch()
+			menu_btn = QPushButton("\u22EE")
+			menu_btn.setObjectName("TodoMenuBtn")
+			menu_btn.setCursor(Qt.PointingHandCursor)
+			menu_btn.setFixedSize(28, 28)
+			lay.addWidget(menu_btn, alignment=Qt.AlignmentFlag.AlignTop)
+
+			container.setLayout(lay)
+
+			# connect check toggle
+			def on_toggle(checked_state):
+				fnt = lbl.font()
+				fnt.setStrikeOut(bool(checked_state))
+				lbl.setFont(fnt)
+				# dim completed items a bit
+				if checked_state:
+					lbl.setStyleSheet("color: rgba(30,58,86,0.45);")
+				else:
+					lbl.setStyleSheet("color: #1E3A56;")
+
+			check_btn.toggled.connect(on_toggle)
+
+			# menu actions
+			menu = QMenu()
+			edit_act = menu.addAction("Edit Task")
+			del_act = menu.addAction("Delete Task")
+
+			def on_menu_clicked():
+				action = menu.exec_(menu_btn.mapToGlobal(menu_btn.rect().bottomLeft()))
+				if action == edit_act:
+					new_text, ok = QInputDialog.getText(self, "Edit Task", "Task:", text=lbl.text())
+					if ok and new_text.strip():
+						lbl.setText(new_text.strip())
+				elif action == del_act:
+					# find and remove the corresponding QListWidgetItem
+					for i in range(self.todo_list.count()):
+						item = self.todo_list.item(i)
+						iw = self.todo_list.itemWidget(item)
+						# itemWidget may be a wrapper; check wrapper or its child
+						if iw is container or (iw is not None and iw.findChild(QWidget, 'TodoItem') is container):
+							self.todo_list.takeItem(i)
+							break
+
+			menu_btn.clicked.connect(on_menu_clicked)
+
+			return container
+
+		# Clickable Add Task box (placed inside the list container)
+		self.todo_add_box = QLineEdit()
+		self.todo_add_box.setObjectName("TodoAddBox")
+		self.todo_add_box.setPlaceholderText("Add task")
+		self.todo_add_box.setFixedHeight(48)
+		# Make the Add box a reasonable width (centered). We'll size tasks
+		# to match this box so they are not cut off.
+		try:
+			add_w = int(list_container.maximumWidth() * 0.5)
+		except Exception:
+			add_w = 320
+		self.todo_add_box.setFixedWidth(add_w)
+		list_container_layout.addWidget(self.todo_add_box, alignment=Qt.AlignmentFlag.AlignHCenter)
+		# When user presses Enter, add task
+		def add_task_from_box():
+			text = self.todo_add_box.text().strip()
+			if not text:
+				return
+			item = QListWidgetItem()
+			widget = make_task_widget(text, checked=False)
+			# Size the task widget to match the Add box / viewport width so it won't be cut off
+			# Prefer the Add box width but don't exceed viewport
+			try:
+				avail_w = min(self.todo_add_box.width(), self.todo_list.viewport().width())
+			except Exception:
+				avail_w = self.todo_add_box.width()
+			# set maximum width so the widget layout doesn't overflow the viewport
+			widget.setMaximumWidth(max(100, avail_w))
+			# Wrap the task widget in a centered wrapper so it aligns with Add box
+			wrapper = QWidget()
+			wrap_layout = QHBoxLayout()
+			wrap_layout.setContentsMargins(0, 0, 0, 0)
+			wrap_layout.addStretch()
+			wrap_layout.addWidget(widget)
+			wrap_layout.addStretch()
+			wrapper.setLayout(wrap_layout)
+			from PySide6.QtCore import QSize
+			item.setSizeHint(QSize(max(100, avail_w), max(96, widget.sizeHint().height())))
+			self.todo_list.addItem(item)
+			self.todo_list.setItemWidget(item, wrapper)
+			self._update_todo_item_widths()
+			self.todo_add_box.clear()
+
+		self.todo_add_box.returnPressed.connect(add_task_from_box)
+
+		# Center the list container vertically and horizontally
+		outer.addStretch()
+		outer.addWidget(list_container, alignment=Qt.AlignmentFlag.AlignHCenter)
+		outer.addStretch()
+
+		w.setLayout(outer)
+		# Start with an empty task list by default (no starter tasks)
+
+		return w
+
+	def _update_todo_item_widths(self):
+		# Ensure all task widgets match the Add box width (and viewport) so
+		# they are never visually cut off.
+		try:
+			avail = min(self.todo_add_box.width(), self.todo_list.viewport().width())
+		except Exception:
+			return
+		for i in range(self.todo_list.count()):
+			item = self.todo_list.item(i)
+			wrapper = self.todo_list.itemWidget(item)
+			if wrapper is None:
+				continue
+			# find the actual TodoItem child
+			inner = None
+			if wrapper.objectName() == 'TodoItem':
+				inner = wrapper
+			else:
+				inner = wrapper.findChild(QWidget, 'TodoItem')
+			if inner is None:
+				# fallback: adjust wrapper size
+				inner = wrapper
+			inner.setMaximumWidth(max(100, avail))
+			from PySide6.QtCore import QSize
+			item.setSizeHint(QSize(max(100, avail), max(96, inner.sizeHint().height())))
+
 
 	def _pomo_start_pause(self):
 		if not self.pomo_running:
@@ -655,33 +1005,8 @@ class MainWindow(QMainWindow):
 			return [dict(row) for row in cur.fetchall()]
 
 	def _check_resume_session(self):
-		# On app start, check for unfinished session and prompt user
-		from PySide6.QtWidgets import QMessageBox
-		active = session_repo.active_session()
-		if active and not self._pending_resume_check:
-			self._pending_resume_check = True
-			msg = QMessageBox(self)
-			msg.setWindowTitle("Resume Session?")
-			msg.setText("A session was still running when you closed the app. Do you want to continue it?")
-			msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-			msg.setDefaultButton(QMessageBox.Yes)
-			ret = msg.exec()
-			if ret == QMessageBox.Yes:
-				self.timer_service.resume_active_session()
-				self._set_buttons("running")
-			else:
-				confirm = QMessageBox(self)
-				confirm.setWindowTitle("End Session?")
-				confirm.setText("Are you sure you want to end this session? Your progress will be saved and the timer will reset.")
-				confirm.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-				confirm.setDefaultButton(QMessageBox.No)
-				ret2 = confirm.exec()
-				if ret2 == QMessageBox.Yes:
-					self.timer_service.force_end()
-					self._set_buttons("idle")
-				else:
-					self.timer_service.resume_active_session()
-					self._set_buttons("running")
-			self._pending_resume_check = False
+		# Resume prompts are disabled. Previously unfinished sessions are
+		# persisted on close; we will not offer to resume them here.
+		return
 
 
