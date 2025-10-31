@@ -277,7 +277,12 @@ class MainWindow(QMainWindow):
 		mins = remaining // 60
 		secs = remaining % 60
 		self.pomo_timer_label.setText(f"{mins:02d}:{secs:02d}")
-		self.pomo_phase_label.setText('Study Session' if self.pomo_phase == 'study' else 'Break Session')
+		# Update phase label to include session number
+		try:
+			self._update_pomo_phase_label()
+		except Exception:
+			# fallback to a simple label
+			self.pomo_phase_label.setText('Study Session' if self.pomo_phase == 'study' else 'Break Session')
 		self.pomo_running = False
 		self.pomo_start_btn.setText('Start')
 		# remove saved snapshot now that we've reflected it in the UI
@@ -448,10 +453,21 @@ class MainWindow(QMainWindow):
 		self.timeframe_combo.addItems(["Week", "Month"])
 		self.timeframe_combo.setCurrentIndex(0)  # Default to Week
 		self.timeframe_combo.setMinimumWidth(140)
-		# Avoid hard-coded colors here so the global Calm theme controls text color
 		# Add widgets (label first, then combo) so they appear right-aligned.
 		timeframe_layout.addWidget(timeframe_label)
 		timeframe_layout.addWidget(self.timeframe_combo)
+		# Prev/Next controls will sit in a centered pill below the combo
+		from PySide6.QtWidgets import QPushButton
+		self.hist_prev_btn = QPushButton("◀")
+		self.hist_prev_btn.setFixedSize(28, 28)
+		self.hist_prev_btn.setObjectName("NavBtn")
+		self.hist_next_btn = QPushButton("▶")
+		self.hist_next_btn.setFixedSize(28, 28)
+		self.hist_next_btn.setObjectName("NavBtn")
+		# center pill label
+		self.hist_period_label = QLabel("")
+		self.hist_period_label.setObjectName("HistPeriodLabel")
+		self.hist_period_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 		layout.addLayout(timeframe_layout)
 
 		# Bar chart (matplotlib)
@@ -470,7 +486,38 @@ class MainWindow(QMainWindow):
 		self.history_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 		layout.addWidget(self.history_table)
 		w.setLayout(layout)
-		self.timeframe_combo.currentIndexChanged.connect(self._update_bar_chart)
+		# history navigation state: 0 == current period, 1 == previous, etc.
+		self.history_offset = 0
+
+		def _on_timeframe_changed(i):
+			# reset offset when switching timeframe
+			self.history_offset = 0
+			self._update_bar_chart()
+
+		self.timeframe_combo.currentIndexChanged.connect(_on_timeframe_changed)
+		self.hist_prev_btn.clicked.connect(lambda: (setattr(self, 'history_offset', self.history_offset + 1), self._update_bar_chart()))
+		self.hist_next_btn.clicked.connect(lambda: (setattr(self, 'history_offset', max(0, self.history_offset - 1)), self._update_bar_chart()))
+
+		# Create centered pill containing prev button, period label, next button
+		nav_pill = QWidget()
+		nav_pill.setObjectName('HistoryNavPill')
+		nav_layout = QHBoxLayout()
+		nav_layout.setContentsMargins(8, 6, 8, 6)
+		nav_layout.setSpacing(8)
+		nav_pill.setLayout(nav_layout)
+		nav_layout.addWidget(self.hist_prev_btn)
+		nav_layout.addWidget(self.hist_period_label)
+		nav_layout.addWidget(self.hist_next_btn)
+
+		# Center the pill in its own horizontal row
+		nav_row = QHBoxLayout()
+		nav_row.addStretch()
+		nav_row.addWidget(nav_pill)
+		nav_row.addStretch()
+		layout.addLayout(nav_row)
+
+		# populate initial view
+		self.history_offset = 0
 		self._refresh_history()
 		self._update_bar_chart()
 		return w
@@ -506,17 +553,44 @@ class MainWindow(QMainWindow):
 		self.pomo_start_btn = QPushButton("Start")
 		self.pomo_start_btn.setObjectName("StartBtn")
 		self.pomo_start_btn.setMinimumHeight(56)
-		controls.addWidget(self.pomo_start_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+		# Place Start button in its own vertical column so we can add a
+		# small Reset Count button beneath it without shifting other controls.
+		from PySide6.QtWidgets import QWidget as _QWidget, QVBoxLayout as _QVBoxLayout
+		center_col = _QWidget()
+		center_col.setObjectName('PomoCenterCol')
+		center_layout = _QVBoxLayout()
+		center_layout.setContentsMargins(0, 0, 0, 0)
+		center_layout.setSpacing(6)
+		center_layout.addWidget(self.pomo_start_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+		center_col.setLayout(center_layout)
+		controls.addWidget(center_col, alignment=Qt.AlignmentFlag.AlignCenter)
 		self.pomo_skip_btn = QPushButton("Skip Session")
 		self.pomo_skip_btn.setObjectName("EndBtn")
 		self.pomo_skip_btn.setMinimumHeight(56)
 		controls.addWidget(self.pomo_skip_btn, alignment=Qt.AlignmentFlag.AlignRight)
+		# (Reset button will be placed at the bottom-right of the tab)
 
 		p_layout.addSpacing(24)
 		p_layout.addLayout(controls)
 
 		outer.addWidget(p_card, alignment=Qt.AlignmentFlag.AlignHCenter)
+		# push content to take available vertical space, then place the reset
+		# button at the very bottom-right with a small inset margin
 		outer.addStretch()
+		from PySide6.QtWidgets import QHBoxLayout as _HBoxLayout
+		bottom_row = _HBoxLayout()
+		# inset from right and bottom so the button isn't flush against edges
+		bottom_row.setContentsMargins(0, 0, 12, 12)
+		bottom_row.addStretch()
+		# Slightly smaller Reset Count button placed bottom-right
+		self.pomo_reset_btn = QPushButton("Reset Count")
+		# Use the same object name as the page's Start button so it inherits
+		# the same QSS styling and hover behavior defined for primary buttons.
+		self.pomo_reset_btn.setObjectName("StartBtn")
+		# Reduce size to half (was 80x20)
+		self.pomo_reset_btn.setFixedSize(40, 10)
+		bottom_row.addWidget(self.pomo_reset_btn, alignment=Qt.AlignmentFlag.AlignRight)
+		outer.addLayout(bottom_row)
 
 		w.setLayout(outer)
 
@@ -543,6 +617,13 @@ class MainWindow(QMainWindow):
 
 		# initialize display
 		self._pomo_enter_phase('study', autostart=False)
+		# ensure phase label shows the current cycle number (starts at #1)
+		try:
+			self._update_pomo_phase_label()
+		except Exception:
+			pass
+		# connect reset handler (placed at bottom-right)
+		self.pomo_reset_btn.clicked.connect(self._reset_pomo_count)
 
 		return w
 
@@ -586,7 +667,7 @@ class MainWindow(QMainWindow):
 		except Exception:
 			list_container.setMaximumWidth(700)
 
-		list_container_layout.addWidget(self.todo_list)
+	# we'll add the task list widget after we create the slot area below
 		def make_task_widget(text, checked=False):
 			container = QWidget()
 			container.setObjectName("TodoItem")
@@ -678,34 +759,131 @@ class MainWindow(QMainWindow):
 		except Exception:
 			add_w = 320
 		self.todo_add_box.setFixedWidth(add_w)
-		list_container_layout.addWidget(self.todo_add_box, alignment=Qt.AlignmentFlag.AlignHCenter)
+
+		# Create a vertical slot area (stack of slots). The Add box starts in slot 0.
+		slot_count = 3
+		slots_container = QWidget()
+		slots_layout = QVBoxLayout()
+		slots_layout.setContentsMargins(0, 0, 0, 0)
+		slots_layout.setSpacing(8)
+		slots_container.setLayout(slots_layout)
+
+		self.todo_slots = []          # list of slot container widgets
+		self.todo_slot_contents = []  # list of inner content widgets (Add box / placeholders / tasks)
+		for i in range(slot_count):
+			slot = QWidget()
+			slot_l = QHBoxLayout()
+			slot_l.setContentsMargins(0, 0, 0, 0)
+			slot_l.setSpacing(0)
+			slot.setLayout(slot_l)
+			slot_l.addStretch()
+			if i == 0:
+				# top slot: Add box
+				slot_l.addWidget(self.todo_add_box)
+				content = self.todo_add_box
+			else:
+				# empty slot to be filled by tasks later (no visible placeholder)
+				content = None
+			slot_l.addStretch()
+			slots_layout.addWidget(slot)
+			self.todo_slots.append(slot)
+			self.todo_slot_contents.append(content)
+
+		# Add the slots container above the scrollable list
+		list_container_layout.addWidget(slots_container)
 		# When user presses Enter, add task
 		def add_task_from_box():
 			text = self.todo_add_box.text().strip()
 			if not text:
 				return
-			item = QListWidgetItem()
+			# Create a new task widget
 			widget = make_task_widget(text, checked=False)
-			# Size the task widget to match the Add box / viewport width so it won't be cut off
-			# Prefer the Add box width but don't exceed viewport
+			setattr(widget, 'is_task', True)
+			# Size the task widget to match the Add box / viewport width
 			try:
 				avail_w = min(self.todo_add_box.width(), self.todo_list.viewport().width())
 			except Exception:
 				avail_w = self.todo_add_box.width()
-			# set maximum width so the widget layout doesn't overflow the viewport
 			widget.setMaximumWidth(max(100, avail_w))
-			# Wrap the task widget in a centered wrapper so it aligns with Add box
-			wrapper = QWidget()
-			wrap_layout = QHBoxLayout()
-			wrap_layout.setContentsMargins(0, 0, 0, 0)
-			wrap_layout.addStretch()
-			wrap_layout.addWidget(widget)
-			wrap_layout.addStretch()
-			wrapper.setLayout(wrap_layout)
-			from PySide6.QtCore import QSize
-			item.setSizeHint(QSize(max(100, avail_w), max(96, widget.sizeHint().height())))
-			self.todo_list.addItem(item)
-			self.todo_list.setItemWidget(item, wrapper)
+
+			# If the Add box slot has not reached the bottom, insert into slots with push-down
+			slot_count = len(self.todo_slot_contents)
+			if not hasattr(self, 'add_slot_index'):
+				self.add_slot_index = 0
+			if self.add_slot_index < slot_count - 1:
+				# push down contents from the bottom up
+				cur = list(self.todo_slot_contents)
+				popped = cur[-1]
+				# new contents: shift items down starting from add_slot_index+1
+				new_contents = list(cur)
+				for i in range(slot_count - 1, self.add_slot_index, -1):
+					new_contents[i] = cur[i-1]
+				# place new task at add_slot_index
+				new_contents[self.add_slot_index] = widget
+				# place the Add box into the next slot
+				new_contents[self.add_slot_index + 1] = self.todo_add_box
+				# apply new contents to slot layouts
+				for i, content in enumerate(new_contents):
+					slot = self.todo_slots[i]
+					slot_l = slot.layout()
+					# remove old center widget (index 1)
+					old_item = slot_l.takeAt(1)
+					if old_item is not None:
+						old_w = old_item.widget()
+						if old_w is not None:
+							old_w.setParent(None)
+					# insert new content only if it exists
+					if content is not None:
+						slot_l.insertWidget(1, content)
+				# update internal list
+				self.todo_slot_contents = new_contents
+				# increment add_slot_index (clamp)
+				self.add_slot_index = min(self.add_slot_index + 1, slot_count - 1)
+				# if popped was a task, append it to the scrollable list
+				if popped is not None and getattr(popped, 'is_task', False):
+					item = QListWidgetItem()
+					from PySide6.QtCore import QSize
+					# make popped task match Add box size exactly
+					try:
+						popped.setFixedWidth(self.todo_add_box.width())
+						popped.setFixedHeight(self.todo_add_box.height())
+					except Exception:
+						popped.setMaximumWidth(max(100, avail_w))
+					wrapper = QWidget()
+					wrap_layout = QHBoxLayout()
+					wrap_layout.setContentsMargins(0, 0, 0, 0)
+					wrap_layout.addStretch()
+					wrap_layout.addWidget(popped)
+					wrap_layout.addStretch()
+					wrapper.setLayout(wrap_layout)
+					item.setSizeHint(QSize(max(100, avail_w), max(96, popped.sizeHint().height())))
+					# insert at top so newest appear first
+					self.todo_list.insertItem(0, item)
+					self.todo_list.setItemWidget(item, wrapper)
+				else:
+					# popped was placeholder or None — nothing to add
+					pass
+			else:
+				# Add box is already at the bottom slot — append new task to top of list
+				item = QListWidgetItem()
+				from PySide6.QtCore import QSize
+				wrapper = QWidget()
+				wrap_layout = QHBoxLayout()
+				wrap_layout.setContentsMargins(0, 0, 0, 0)
+				wrap_layout.addStretch()
+				# ensure widget matches Add box size
+				try:
+					widget.setFixedWidth(self.todo_add_box.width())
+					widget.setFixedHeight(self.todo_add_box.height())
+				except Exception:
+					widget.setMaximumWidth(max(100, avail_w))
+				wrap_layout.addWidget(widget)
+				wrap_layout.addStretch()
+				wrapper.setLayout(wrap_layout)
+				item.setSizeHint(QSize(max(100, avail_w), max(96, widget.sizeHint().height())))
+				self.todo_list.insertItem(0, item)
+				self.todo_list.setItemWidget(item, wrapper)
+
 			self._update_todo_item_widths()
 			self.todo_add_box.clear()
 
@@ -745,6 +923,25 @@ class MainWindow(QMainWindow):
 			inner.setMaximumWidth(max(100, avail))
 			from PySide6.QtCore import QSize
 			item.setSizeHint(QSize(max(100, avail), max(96, inner.sizeHint().height())))
+
+		# Also update slot contents (Add box and placeholders/tasks) so they match Add box width
+		try:
+			ph_w = max(100, avail)
+			if hasattr(self, 'todo_slot_contents'):
+				for content in self.todo_slot_contents:
+					if content is None:
+						continue
+					# For QLineEdit (add box) set fixed width; for styled item widgets set maximum width
+					from PySide6.QtWidgets import QLineEdit
+					if isinstance(content, QLineEdit):
+						content.setFixedWidth(ph_w)
+					else:
+						try:
+							content.setMaximumWidth(ph_w)
+						except Exception:
+							pass
+		except Exception:
+			pass
 
 
 	def _pomo_start_pause(self):
@@ -842,20 +1039,89 @@ class MainWindow(QMainWindow):
 			# break: long or short determined at entry by elapsed target stored in pomo_target
 			return getattr(self, 'pomo_target', self.POMO_SHORT_BREAK_SEC)
 
+	def _update_pomo_phase_label(self):
+		"""Set the phase label including session numbering.
+
+		Study phases display the upcoming study count (cycle_count + 1).
+		Break phases display the completed study count (cycle_count).
+		"""
+		try:
+			if getattr(self, 'pomo_phase', 'study') == 'study':
+				num = getattr(self, 'pomo_cycle_count', 0) + 1
+				self.pomo_phase_label.setText(f"Study Session #{num}")
+			else:
+				# If for some reason cycle_count is 0 while on a break, show #1
+				num = max(1, getattr(self, 'pomo_cycle_count', 0))
+				self.pomo_phase_label.setText(f"Break #{num}")
+		except Exception:
+			# best-effort: do nothing on failure
+			pass
+
+	def _reset_pomo_count(self):
+		"""Reset the pomodoro cycle counter to zero, pause timers,
+		stop any active DB session, and revert the reset button styling.
+		Always return the UI to Study Session #1 (not a Break).
+		"""
+		try:
+			# Pause timer if running
+			try:
+				if getattr(self, 'pomo_timer', None) is not None:
+					self.pomo_timer.stop()
+			except Exception:
+				pass
+			self.pomo_running = False
+			# Ensure Start button shows the idle label
+			try:
+				self.pomo_start_btn.setText('Start')
+			except Exception:
+				pass
+			# Stop any active pomodoro DB session (regardless of current phase)
+			try:
+				if getattr(self, 'pomo_session_id', None) is not None:
+					try:
+						session_repo.stop_session(self.pomo_session_id)
+					except Exception:
+						pass
+					self.pomo_session_id = None
+					# update graphs/UI
+					self._update_today_label()
+					self._refresh_history()
+					if hasattr(self, '_update_bar_chart'):
+						self._update_bar_chart()
+			except Exception:
+				pass
+			# Reset cycle count
+			self.pomo_cycle_count = 0
+			# Force phase into 'study' and prepare UI without starting timer
+			try:
+				self._pomo_enter_phase('study', autostart=False)
+			except Exception:
+				# fallback: set phase and label
+				self.pomo_phase = 'study'
+				self._update_pomo_phase_label()
+			# No inline styling to revert; the button uses the page's StartBtn QSS
+		except Exception:
+			pass
+
 	def _pomo_enter_phase(self, phase, long=False, autostart=True):
 		# phase: 'study' or 'break'
 		self.pomo_phase = phase
 		self.pomo_elapsed = 0
 		if phase == 'study':
-			self.pomo_phase_label.setText('Study Session')
 			self.pomo_target = self.POMO_STUDY_SEC
 			self.pomo_timer_label.setText(f"{self.POMO_STUDY_SEC//60:02d}:00")
 			# prepare DB session (only start when user presses start)
 			self.pomo_session_id = None
 		else:
-			self.pomo_phase_label.setText('Break Session')
 			self.pomo_target = self.POMO_LONG_BREAK_SEC if long else self.POMO_SHORT_BREAK_SEC
 			self.pomo_timer_label.setText(f"{self.pomo_target//60:02d}:00")
+
+		# Update phase label (includes cycle number). Do this after we set
+		# pomo_phase and pomo_target so the label has the right information.
+		try:
+			self._update_pomo_phase_label()
+		except Exception:
+			pass
 
 		# autostart next phase if desired
 		if autostart:
@@ -882,11 +1148,12 @@ class MainWindow(QMainWindow):
 		x = []
 		y = []
 		xlabel = ""
+		# Determine the target period based on history_offset (0 == current)
+		offset = getattr(self, 'history_offset', 0)
 		# No 'Today' option; only handle 'week' and 'month'
 		if tf == "week":
-			# Show hours studied for each day of current week (Mon-Sun)
-			# Find Monday of current week
-			start_of_week = now - datetime.timedelta(days=now.weekday())
+			# Find Monday of target week
+			start_of_week = (now - datetime.timedelta(days=now.weekday())) - datetime.timedelta(weeks=offset)
 			days = [(start_of_week + datetime.timedelta(days=i)).date() for i in range(7)]
 			x = [d.strftime("%a") for d in days]
 			y = [0]*7
@@ -901,10 +1168,16 @@ class MainWindow(QMainWindow):
 			for i, d in enumerate(day_strs):
 				y[i] = (totals.get(d, 0) or 0) / 3600
 			xlabel = "Day of Week"
+			start_str = day_strs[0]
+			end_str = day_strs[-1]
 		else:
-			# Show hours studied for each day of current month
+			# Target month/year adjusted by offset months back
 			year = now.year
-			month = now.month
+			month = now.month - offset
+			# normalize month/year when month <= 0
+			while month <= 0:
+				month += 12
+				year -= 1
 			num_days = calendar.monthrange(year, month)[1]
 			days = [datetime.date(year, month, i+1) for i in range(num_days)]
 			x = [str(d.day) for d in days]
@@ -920,6 +1193,8 @@ class MainWindow(QMainWindow):
 			for i, d in enumerate(day_strs):
 				y[i] = (totals.get(d, 0) or 0) / 3600
 			xlabel = "Day of Month"
+			start_str = day_strs[0]
+			end_str = day_strs[-1]
 		conn.close()
 		self.figure.clear()
 		ax = self.figure.add_subplot(111)
@@ -930,6 +1205,39 @@ class MainWindow(QMainWindow):
 		ax.set_ylim(bottom=0)
 		self.figure.tight_layout()
 		self.canvas.draw()
+		# update the centered period label (This Week / Last Week / date)
+		try:
+			label_text = ""
+			if tf == "week":
+				if offset == 0:
+					label_text = "This Week"
+				elif offset == 1:
+					label_text = "Last Week"
+				else:
+					label_text = datetime.date.fromisoformat(start_str).strftime("%b-%d-%Y")
+			else:
+				# month
+				if offset == 0:
+					label_text = "This Month"
+				elif offset == 1:
+					label_text = "Last Month"
+				else:
+					label_text = datetime.date.fromisoformat(start_str).strftime("%b-%d-%Y")
+			if hasattr(self, 'hist_period_label'):
+				self.hist_period_label.setText(label_text)
+		except Exception:
+			pass
+		# update table to show sessions for the same date range
+		try:
+			self._refresh_history(start_str, end_str)
+		except Exception:
+			pass
+		# enable/disable forward (next) button when at current period
+		try:
+			if hasattr(self, 'hist_next_btn'):
+				self.hist_next_btn.setEnabled(getattr(self, 'history_offset', 0) > 0)
+		except Exception:
+			pass
 
 
 	def _on_tick(self, elapsed):
@@ -984,16 +1292,28 @@ class MainWindow(QMainWindow):
 		if hasattr(self, 'footer_today'):
 			self.footer_today.set_today(f"Today: {total_sec // 60}m")
 
-	def _refresh_history(self):
-		sessions = self._get_sessions()
+	def _refresh_history(self, start_date=None, end_date=None):
+		# Populate the history table. If start_date and end_date (YYYY-MM-DD)
+		# are provided, only show sessions in that inclusive range.
+		if start_date is None or end_date is None:
+			sessions = self._get_sessions()
+		else:
+			# query sessions in range
+			with session_repo.connect() as conn:
+				cur = conn.execute(
+					"SELECT local_date, start_utc, end_utc, duration_sec, subject, source "
+					"FROM sessions WHERE local_date BETWEEN ? AND ? ORDER BY start_utc DESC",
+					(start_date, end_date)
+				)
+				sessions = [dict(row) for row in cur.fetchall()]
 		self.history_table.setRowCount(len(sessions))
 		for row, sess in enumerate(sessions):
 			self.history_table.setItem(row, 0, QTableWidgetItem(sess["local_date"]))
 			self.history_table.setItem(row, 1, QTableWidgetItem(sess["start_utc"]))
-			self.history_table.setItem(row, 2, QTableWidgetItem(sess["end_utc"] or ""))
-			dur = fmt_hms(sess["duration_sec"] or 0) if sess["duration_sec"] is not None else ""
+			self.history_table.setItem(row, 2, QTableWidgetItem(sess.get("end_utc") or ""))
+			dur = fmt_hms(sess["duration_sec"] or 0) if sess.get("duration_sec") is not None else ""
 			self.history_table.setItem(row, 3, QTableWidgetItem(dur))
-			self.history_table.setItem(row, 4, QTableWidgetItem(sess["subject"] or ""))
+			self.history_table.setItem(row, 4, QTableWidgetItem(sess.get("subject") or ""))
 			# Source: 'timer' or 'pomodoro'
 			self.history_table.setItem(row, 5, QTableWidgetItem(sess.get("source", "timer")))
 
