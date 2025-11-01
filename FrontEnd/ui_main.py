@@ -628,9 +628,13 @@ class MainWindow(QMainWindow):
 		return w
 
 	def _build_todo_tab(self):
-		from PySide6.QtWidgets import QListWidget, QListWidgetItem, QHBoxLayout, QLineEdit, QMenu, QInputDialog
-		from PySide6.QtGui import QIcon
-		from PySide6.QtCore import Qt
+		"""Build the To-Do tab with unlimited tasks, auto-moving Add row, and smart scrollbar."""
+		from PySide6.QtWidgets import (
+			QScrollArea, QVBoxLayout, QHBoxLayout, QLineEdit, 
+			QPushButton, QLabel, QMenu, QInputDialog
+		)
+		from PySide6.QtCore import Qt, QSize
+		from PySide6.QtGui import QFont
 
 		w = QWidget()
 		outer = QVBoxLayout()
@@ -640,89 +644,91 @@ class MainWindow(QMainWindow):
 		# Title
 		title = QLabel("To-Do")
 		title.setStyleSheet("font-size:20px; font-weight:600; color: #1E3A56;")
-		# Center the title horizontally above the list
 		outer.addWidget(title, alignment=Qt.AlignmentFlag.AlignHCenter)
 
-		# Task list (QListWidget with custom widgets)
-		self.todo_list = QListWidget()
-		self.todo_list.setObjectName("TodoList")
-		self.todo_list.setSpacing(8)
-		self.todo_list.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-		self.todo_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-		# Watch the viewport for resize so we can update item widths
-		self.todo_list.viewport().installEventFilter(self)
+		# Scroll area for unlimited tasks
+		scroll = QScrollArea()
+		scroll.setObjectName("TodoScrollArea")
+		scroll.setWidgetResizable(True)
+		scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+		scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+		scroll.setFrameShape(QScrollArea.NoFrame)
 
-		# Container that will host the list and the Add box; this is the
-		# single visible box centered on the page (rounded + shadow).
-		list_container = QWidget()
-		list_container.setObjectName("TodoContainer")
-		list_container_layout = QVBoxLayout()
-		list_container_layout.setContentsMargins(12, 12, 12, 12)
-		list_container_layout.setSpacing(8)
-		list_container.setLayout(list_container_layout)
+		# Content widget inside scroll area
+		content = QWidget()
+		content.setObjectName("TodoContent")
+		self.todo_layout = QVBoxLayout()
+		self.todo_layout.setContentsMargins(0, 0, 0, 0)
+		self.todo_layout.setSpacing(8)
+		self.todo_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+		content.setLayout(self.todo_layout)
+		scroll.setWidget(content)
 
-		# Ensure moderate width (~65% of initial window width)
-		try:
-			list_container.setMaximumWidth(int(self.width() * 0.65))
-		except Exception:
-			list_container.setMaximumWidth(700)
+		# Store tasks for persistence
+		self.todo_tasks = []
 
-	# we'll add the task list widget after we create the slot area below
 		def make_task_widget(text, checked=False):
+			"""Create a task row widget with checkbox, label, and menu."""
 			container = QWidget()
 			container.setObjectName("TodoItem")
+			container.setFixedHeight(56)  # Same height as Add Task row
+			
 			lay = QHBoxLayout()
-			lay.setContentsMargins(12, 12, 12, 12)
+			lay.setContentsMargins(12, 0, 12, 0)
 			lay.setSpacing(12)
 
-			# Check circle
+			# Checkbox
 			check_btn = QPushButton()
 			check_btn.setCheckable(True)
 			check_btn.setFixedSize(20, 20)
 			check_btn.setObjectName("TodoCheck")
 			check_btn.setChecked(bool(checked))
 
-			# Make each task item a bit taller so items read as "length > height"
-			container.setMinimumHeight(64)
-
-			# Label
+			# Label - allow horizontal expansion, no wrapping
 			lbl = QLabel(text)
-			lbl.setWordWrap(True)
+			lbl.setWordWrap(False)
 			lbl.setObjectName("TodoLabel")
-			font = lbl.font()
+			lbl.setMinimumWidth(100)  # Ensure label can expand
+			font = QFont()
 			font.setPointSize(14)
 			lbl.setFont(font)
+			
 			if checked:
 				f = lbl.font()
 				f.setStrikeOut(True)
 				lbl.setFont(f)
+				lbl.setStyleSheet("color: rgba(30,58,86,0.45);")
 
-			# Spacer and menu
-			lay.addWidget(check_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
-			lay.addWidget(lbl)
-			lay.addStretch()
+			# Three-dot menu button (right-aligned, vertically centered)
 			menu_btn = QPushButton("\u22EE")
 			menu_btn.setObjectName("TodoMenuBtn")
 			menu_btn.setCursor(Qt.PointingHandCursor)
 			menu_btn.setFixedSize(28, 28)
-			lay.addWidget(menu_btn, alignment=Qt.AlignmentFlag.AlignTop)
 
+			lay.addWidget(check_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
+			lay.addWidget(lbl, stretch=1)
+			lay.addWidget(menu_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
 			container.setLayout(lay)
 
-			# connect check toggle
+			# Checkbox toggle handler
 			def on_toggle(checked_state):
 				fnt = lbl.font()
 				fnt.setStrikeOut(bool(checked_state))
 				lbl.setFont(fnt)
-				# dim completed items a bit
 				if checked_state:
 					lbl.setStyleSheet("color: rgba(30,58,86,0.45);")
 				else:
 					lbl.setStyleSheet("color: #1E3A56;")
+				# Update task state
+				for task in self.todo_tasks:
+					if task['widget'] is container:
+						task['checked'] = checked_state
+						self._save_todo_tasks()
+						break
 
 			check_btn.toggled.connect(on_toggle)
 
-			# menu actions
+			# Menu actions
 			menu = QMenu()
 			edit_act = menu.addAction("Edit Task")
 			del_act = menu.addAction("Delete Task")
@@ -730,218 +736,230 @@ class MainWindow(QMainWindow):
 			def on_menu_clicked():
 				action = menu.exec_(menu_btn.mapToGlobal(menu_btn.rect().bottomLeft()))
 				if action == edit_act:
-					new_text, ok = QInputDialog.getText(self, "Edit Task", "Task:", text=lbl.text())
+					# Edit task inline
+					new_text, ok = QInputDialog.getText(
+						self, "Edit Task", "Task:", text=lbl.text()
+					)
 					if ok and new_text.strip():
 						lbl.setText(new_text.strip())
+						# Update stored task
+						for task in self.todo_tasks:
+							if task['widget'] is container:
+								task['text'] = new_text.strip()
+								self._save_todo_tasks()
+								break
 				elif action == del_act:
-					# find and remove the corresponding QListWidgetItem
-					for i in range(self.todo_list.count()):
-						item = self.todo_list.item(i)
-						iw = self.todo_list.itemWidget(item)
-						# itemWidget may be a wrapper; check wrapper or its child
-						if iw is container or (iw is not None and iw.findChild(QWidget, 'TodoItem') is container):
-							self.todo_list.takeItem(i)
+					# Delete task (Add Task row stays at bottom automatically)
+					for i, task in enumerate(self.todo_tasks):
+						if task['widget'] is container:
+							self.todo_layout.removeWidget(container)
+							container.deleteLater()
+							del self.todo_tasks[i]
+							self._save_todo_tasks()
 							break
 
 			menu_btn.clicked.connect(on_menu_clicked)
 
 			return container
 
-		# Clickable Add Task box (placed inside the list container)
-		self.todo_add_box = QLineEdit()
-		self.todo_add_box.setObjectName("TodoAddBox")
-		self.todo_add_box.setPlaceholderText("Add task")
-		self.todo_add_box.setFixedHeight(48)
-		# Make the Add box a reasonable width (centered). We'll size tasks
-		# to match this box so they are not cut off.
-		try:
-			add_w = int(list_container.maximumWidth() * 0.5)
-		except Exception:
-			add_w = 320
-		self.todo_add_box.setFixedWidth(add_w)
+		# Create the "Add Task" row (taller, no button, dotted border)
+		self.todo_add_row = QWidget()
+		self.todo_add_row.setObjectName("TodoAddRow")
+		self.todo_add_row.setFixedHeight(56)  # Taller for better visibility
+		
+		add_layout = QHBoxLayout()
+		add_layout.setContentsMargins(12, 0, 12, 0)
+		add_layout.setSpacing(0)
 
-		# Create a vertical slot area (stack of slots). The Add box starts in slot 0.
-		slot_count = 3
-		slots_container = QWidget()
-		slots_layout = QVBoxLayout()
-		slots_layout.setContentsMargins(0, 0, 0, 0)
-		slots_layout.setSpacing(8)
-		slots_container.setLayout(slots_layout)
+		self.todo_add_input = QLineEdit()
+		self.todo_add_input.setObjectName("TodoAddBox")
+		self.todo_add_input.setPlaceholderText("Add task...")
+		self.todo_add_input.setFrame(False)
 
-		self.todo_slots = []          # list of slot container widgets
-		self.todo_slot_contents = []  # list of inner content widgets (Add box / placeholders / tasks)
-		for i in range(slot_count):
-			slot = QWidget()
-			slot_l = QHBoxLayout()
-			slot_l.setContentsMargins(0, 0, 0, 0)
-			slot_l.setSpacing(0)
-			slot.setLayout(slot_l)
-			slot_l.addStretch()
-			if i == 0:
-				# top slot: Add box
-				slot_l.addWidget(self.todo_add_box)
-				content = self.todo_add_box
-			else:
-				# empty slot to be filled by tasks later (no visible placeholder)
-				content = None
-			slot_l.addStretch()
-			slots_layout.addWidget(slot)
-			self.todo_slots.append(slot)
-			self.todo_slot_contents.append(content)
+		add_layout.addWidget(self.todo_add_input, stretch=1)
+		self.todo_add_row.setLayout(add_layout)
 
-		# Add the slots container above the scrollable list
-		list_container_layout.addWidget(slots_container)
-		# When user presses Enter, add task
-		def add_task_from_box():
-			text = self.todo_add_box.text().strip()
+		def add_task():
+			"""Add a new task at the top (most recent first)."""
+			text = self.todo_add_input.text().strip()
 			if not text:
 				return
-			# Create a new task widget
-			widget = make_task_widget(text, checked=False)
-			setattr(widget, 'is_task', True)
-			# Size the task widget to match the Add box / viewport width
-			try:
-				avail_w = min(self.todo_add_box.width(), self.todo_list.viewport().width())
-			except Exception:
-				avail_w = self.todo_add_box.width()
-			widget.setMaximumWidth(max(100, avail_w))
 
-			# If the Add box slot has not reached the bottom, insert into slots with push-down
-			slot_count = len(self.todo_slot_contents)
-			if not hasattr(self, 'add_slot_index'):
-				self.add_slot_index = 0
-			if self.add_slot_index < slot_count - 1:
-				# push down contents from the bottom up
-				cur = list(self.todo_slot_contents)
-				popped = cur[-1]
-				# new contents: shift items down starting from add_slot_index+1
-				new_contents = list(cur)
-				for i in range(slot_count - 1, self.add_slot_index, -1):
-					new_contents[i] = cur[i-1]
-				# place new task at add_slot_index
-				new_contents[self.add_slot_index] = widget
-				# place the Add box into the next slot
-				new_contents[self.add_slot_index + 1] = self.todo_add_box
-				# apply new contents to slot layouts
-				for i, content in enumerate(new_contents):
-					slot = self.todo_slots[i]
-					slot_l = slot.layout()
-					# remove old center widget (index 1)
-					old_item = slot_l.takeAt(1)
-					if old_item is not None:
-						old_w = old_item.widget()
-						if old_w is not None:
-							old_w.setParent(None)
-					# insert new content only if it exists
-					if content is not None:
-						slot_l.insertWidget(1, content)
-				# update internal list
-				self.todo_slot_contents = new_contents
-				# increment add_slot_index (clamp)
-				self.add_slot_index = min(self.add_slot_index + 1, slot_count - 1)
-				# if popped was a task, append it to the scrollable list
-				if popped is not None and getattr(popped, 'is_task', False):
-					item = QListWidgetItem()
-					from PySide6.QtCore import QSize
-					# make popped task match Add box size exactly
-					try:
-						popped.setFixedWidth(self.todo_add_box.width())
-						popped.setFixedHeight(self.todo_add_box.height())
-					except Exception:
-						popped.setMaximumWidth(max(100, avail_w))
-					wrapper = QWidget()
-					wrap_layout = QHBoxLayout()
-					wrap_layout.setContentsMargins(0, 0, 0, 0)
-					wrap_layout.addStretch()
-					wrap_layout.addWidget(popped)
-					wrap_layout.addStretch()
-					wrapper.setLayout(wrap_layout)
-					item.setSizeHint(QSize(max(100, avail_w), max(96, popped.sizeHint().height())))
-					# insert at top so newest appear first
-					self.todo_list.insertItem(0, item)
-					self.todo_list.setItemWidget(item, wrapper)
-				else:
-					# popped was placeholder or None — nothing to add
-					pass
-			else:
-				# Add box is already at the bottom slot — append new task to top of list
-				item = QListWidgetItem()
-				from PySide6.QtCore import QSize
-				wrapper = QWidget()
-				wrap_layout = QHBoxLayout()
-				wrap_layout.setContentsMargins(0, 0, 0, 0)
-				wrap_layout.addStretch()
-				# ensure widget matches Add box size
-				try:
-					widget.setFixedWidth(self.todo_add_box.width())
-					widget.setFixedHeight(self.todo_add_box.height())
-				except Exception:
-					widget.setMaximumWidth(max(100, avail_w))
-				wrap_layout.addWidget(widget)
-				wrap_layout.addStretch()
-				wrapper.setLayout(wrap_layout)
-				item.setSizeHint(QSize(max(100, avail_w), max(96, widget.sizeHint().height())))
-				self.todo_list.insertItem(0, item)
-				self.todo_list.setItemWidget(item, wrapper)
+			# Create new task widget
+			task_widget = make_task_widget(text, checked=False)
+			
+			# Insert new task at position 0 (top of list)
+			self.todo_layout.insertWidget(0, task_widget)
+			
+			# Store task data (prepend to list so index matches layout)
+			self.todo_tasks.insert(0, {
+				'text': text,
+				'checked': False,
+				'widget': task_widget
+			})
+			
+			# Save and clear input
+			self._save_todo_tasks()
+			self.todo_add_input.clear()
+			self.todo_add_input.setFocus()
 
-			self._update_todo_item_widths()
-			self.todo_add_box.clear()
+		# Connect add task handler (Enter key only, no button)
+		self.todo_add_input.returnPressed.connect(add_task)
 
-		self.todo_add_box.returnPressed.connect(add_task_from_box)
+		# Add the Add Task row to layout (fixed at bottom)
+		self.todo_layout.addWidget(self.todo_add_row)
 
-		# Center the list container vertically and horizontally
-		outer.addStretch()
-		outer.addWidget(list_container, alignment=Qt.AlignmentFlag.AlignHCenter)
-		outer.addStretch()
-
+		# Add scroll area to main layout
+		outer.addWidget(scroll)
 		w.setLayout(outer)
-		# Start with an empty task list by default (no starter tasks)
+
+		# Load saved tasks
+		self._load_todo_tasks()
 
 		return w
 
-	def _update_todo_item_widths(self):
-		# Ensure all task widgets match the Add box width (and viewport) so
-		# they are never visually cut off.
+	def _save_todo_tasks(self):
+		"""Save tasks to persistent storage (JSON)."""
 		try:
-			avail = min(self.todo_add_box.width(), self.todo_list.viewport().width())
-		except Exception:
-			return
-		for i in range(self.todo_list.count()):
-			item = self.todo_list.item(i)
-			wrapper = self.todo_list.itemWidget(item)
-			if wrapper is None:
-				continue
-			# find the actual TodoItem child
-			inner = None
-			if wrapper.objectName() == 'TodoItem':
-				inner = wrapper
-			else:
-				inner = wrapper.findChild(QWidget, 'TodoItem')
-			if inner is None:
-				# fallback: adjust wrapper size
-				inner = wrapper
-			inner.setMaximumWidth(max(100, avail))
-			from PySide6.QtCore import QSize
-			item.setSizeHint(QSize(max(100, avail), max(96, inner.sizeHint().height())))
+			from BackEnd.core.paths import user_data_dir
+			import json
+			
+			data_dir = user_data_dir()
+			data_dir.mkdir(parents=True, exist_ok=True)
+			tasks_file = data_dir / "todos.json"
+			
+			# Save task text and checked state only (not widgets)
+			tasks_data = [
+				{'text': task['text'], 'checked': task['checked']}
+				for task in self.todo_tasks
+			]
+			
+			with open(tasks_file, 'w', encoding='utf-8') as f:
+				json.dump({'tasks': tasks_data}, f, indent=2)
+		except Exception as e:
+			print(f"Failed to save tasks: {e}")
 
-		# Also update slot contents (Add box and placeholders/tasks) so they match Add box width
+	def _load_todo_tasks(self):
+		"""Load tasks from persistent storage on startup."""
 		try:
-			ph_w = max(100, avail)
-			if hasattr(self, 'todo_slot_contents'):
-				for content in self.todo_slot_contents:
-					if content is None:
-						continue
-					# For QLineEdit (add box) set fixed width; for styled item widgets set maximum width
-					from PySide6.QtWidgets import QLineEdit
-					if isinstance(content, QLineEdit):
-						content.setFixedWidth(ph_w)
-					else:
-						try:
-							content.setMaximumWidth(ph_w)
-						except Exception:
-							pass
-		except Exception:
-			pass
+			from BackEnd.core.paths import user_data_dir
+			import json
+			from PySide6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel, QMenu, QInputDialog
+			from PySide6.QtCore import Qt
+			from PySide6.QtGui import QFont
+			
+			tasks_file = user_data_dir() / "todos.json"
+			if not tasks_file.exists():
+				return
+			
+			with open(tasks_file, 'r', encoding='utf-8') as f:
+				data = json.load(f)
+			
+			# Create task widgets from saved data (in reverse order so most recent is at top)
+			for task_data in reversed(data.get('tasks', [])):
+				text = task_data['text']
+				checked = task_data.get('checked', False)
+				
+				# Create task widget (reuse the factory from _build_todo_tab)
+				container = QWidget()
+				container.setObjectName("TodoItem")
+				container.setFixedHeight(56)  # Match Add Task row height
+				
+				lay = QHBoxLayout()
+				lay.setContentsMargins(12, 0, 12, 0)
+				lay.setSpacing(12)
+
+				check_btn = QPushButton()
+				check_btn.setCheckable(True)
+				check_btn.setFixedSize(20, 20)
+				check_btn.setObjectName("TodoCheck")
+				check_btn.setChecked(checked)
+
+				lbl = QLabel(text)
+				lbl.setWordWrap(False)
+				lbl.setObjectName("TodoLabel")
+				lbl.setMinimumWidth(100)  # Allow horizontal expansion
+				font = QFont()
+				font.setPointSize(14)
+				lbl.setFont(font)
+				
+				if checked:
+					f = lbl.font()
+					f.setStrikeOut(True)
+					lbl.setFont(f)
+					lbl.setStyleSheet("color: rgba(30,58,86,0.45);")
+
+				menu_btn = QPushButton("\u22EE")
+				menu_btn.setObjectName("TodoMenuBtn")
+				menu_btn.setCursor(Qt.PointingHandCursor)
+				menu_btn.setFixedSize(28, 28)
+
+				lay.addWidget(check_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
+				lay.addWidget(lbl, stretch=1)
+				lay.addWidget(menu_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
+				container.setLayout(lay)
+
+				# Checkbox toggle
+				def make_toggle_handler(container_ref, lbl_ref):
+					def on_toggle(checked_state):
+						fnt = lbl_ref.font()
+						fnt.setStrikeOut(bool(checked_state))
+						lbl_ref.setFont(fnt)
+						if checked_state:
+							lbl_ref.setStyleSheet("color: rgba(30,58,86,0.45);")
+						else:
+							lbl_ref.setStyleSheet("color: #1E3A56;")
+						for task in self.todo_tasks:
+							if task['widget'] is container_ref:
+								task['checked'] = checked_state
+								self._save_todo_tasks()
+								break
+					return on_toggle
+
+				check_btn.toggled.connect(make_toggle_handler(container, lbl))
+
+				# Menu
+				menu = QMenu()
+				edit_act = menu.addAction("Edit Task")
+				del_act = menu.addAction("Delete Task")
+
+				def make_menu_handler(container_ref, lbl_ref, menu_btn_ref):
+					def on_menu_clicked():
+						action = menu.exec_(menu_btn_ref.mapToGlobal(menu_btn_ref.rect().bottomLeft()))
+						if action == edit_act:
+							new_text, ok = QInputDialog.getText(
+								self, "Edit Task", "Task:", text=lbl_ref.text()
+							)
+							if ok and new_text.strip():
+								lbl_ref.setText(new_text.strip())
+								for task in self.todo_tasks:
+									if task['widget'] is container_ref:
+										task['text'] = new_text.strip()
+										self._save_todo_tasks()
+										break
+						elif action == del_act:
+							for i, task in enumerate(self.todo_tasks):
+								if task['widget'] is container_ref:
+									self.todo_layout.removeWidget(container_ref)
+									container_ref.deleteLater()
+									del self.todo_tasks[i]
+									self._save_todo_tasks()
+									break
+					return on_menu_clicked
+
+				menu_btn.clicked.connect(make_menu_handler(container, lbl, menu_btn))
+
+				# Insert at top (position 0) - most recent first
+				self.todo_layout.insertWidget(0, container)
+				
+				# Store task (prepend to maintain index consistency)
+				self.todo_tasks.insert(0, {
+					'text': text,
+					'checked': checked,
+					'widget': container
+				})
+		except Exception as e:
+			print(f"Failed to load tasks: {e}")
 
 
 	def _pomo_start_pause(self):

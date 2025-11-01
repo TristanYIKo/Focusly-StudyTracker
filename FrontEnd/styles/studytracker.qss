@@ -188,28 +188,38 @@ QLabel#TodayLabel {
 }
 
 /* To-Do tab styles */
-/* Remove the visible container so only individual task items are boxed */
-QWidget#TodoContainer {
-    background: transparent;
-    border: none;
-    box-shadow: none;
-}
-
-QListWidget#TodoList {
+/* Scroll area for unlimited tasks */
+QScrollArea#TodoScrollArea {
     background: transparent;
     border: none;
 }
 
-/* Each todo item is now a boxed card-like row */
+QWidget#TodoContent {
+    background: transparent;
+}
+
+/* Task items - clean card-like rows */
 QWidget#TodoItem {
     background: #F7FAFC;
     border-radius: 12px;
-    border: 2px dotted rgba(30,58,86,0.12); /* same dotted style as Add box */
-    padding: 12px;
-    margin: 6px 0;
-    /* subtle shadow to separate items from background */
-    box-shadow: 0 6px 18px 0 rgba(30,58,86,0.04);
-    min-height: 96px; /* doubled height relative to Add box */
+    border: 1px solid rgba(30,58,86,0.08);
+    margin: 0;
+    /* subtle shadow to lift items */
+    box-shadow: 0 2px 8px 0 rgba(30,58,86,0.03);
+}
+
+QWidget#TodoItem:hover {
+    background: #FFFFFF;
+    border: 1px solid rgba(30,58,86,0.12);
+    box-shadow: 0 4px 12px 0 rgba(30,58,86,0.06);
+}
+
+/* Add Task row - distinctive dotted border, taller, always visible at bottom */
+QWidget#TodoAddRow {
+    background: #F7FAFC;
+    border-radius: 12px;
+    border: 2px dotted rgba(30,58,86,0.18); /* dotted border to distinguish */
+    margin: 0;
 }
 
 QPushButton#TodoCheck {
@@ -230,24 +240,22 @@ QPushButton#TodoMenuBtn {
     color: rgba(30,58,86,0.6);
 }
 QLineEdit#TodoAddBox {
-    border: 2px dotted rgba(30,58,86,0.12);
-    border-radius: 12px;
-    padding: 10px 12px;
+    border: none; /* no border - parent TodoAddRow has dotted border */
+    border-radius: 0;
+    padding: 0;
     color: #1E3A56;
-    background: #F7FAFC; /* match task item background for a unified look */
-    transition: background 120ms ease-in-out;
+    background: transparent;
+    font-size: 14px;
 }
 QLineEdit#TodoAddBox:hover {
-    background: rgba(143,174,196,0.04);
+    background: transparent;
 }
 
-/* Remove native focus/highlight for the Add Task box and todo controls.
-   Replace the platform focus rectangle with a subtle calm-styled outline
-   so the control doesn't show the sharp native highlight seen on Windows. */
+/* Remove native focus/highlight for the Add Task box and todo controls */
 QLineEdit#TodoAddBox:focus {
-    /* keep the dotted border but remove any native focus painting */
-    background: rgba(143,174,196,0.04);
-    border: 2px dotted rgba(30,58,86,0.12);
+    background: transparent;
+    border: none;
+    outline: none;
 }
 
 /* Ensure buttons don't show a focus outline or glow */
