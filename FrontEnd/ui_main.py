@@ -668,27 +668,22 @@ class MainWindow(QMainWindow):
 		self.todo_tasks = []
 
 		def make_task_widget(text, checked=False):
-			"""Create a task row widget with checkbox, label, and menu."""
+			"""Create a task row widget - entire box toggles strike-through on click."""
 			container = QWidget()
 			container.setObjectName("TodoItem")
 			container.setFixedHeight(56)  # Same height as Add Task row
+			container.setCursor(Qt.PointingHandCursor)  # Show it's clickable
 			
 			lay = QHBoxLayout()
-			lay.setContentsMargins(12, 0, 12, 0)
+			lay.setContentsMargins(16, 0, 12, 0)  # More padding on left for text alignment
 			lay.setSpacing(12)
 
-			# Checkbox
-			check_btn = QPushButton()
-			check_btn.setCheckable(True)
-			check_btn.setFixedSize(20, 20)
-			check_btn.setObjectName("TodoCheck")
-			check_btn.setChecked(bool(checked))
-
-			# Label - allow horizontal expansion, no wrapping
+			# Label - text starts from left, no checkbox needed
 			lbl = QLabel(text)
 			lbl.setWordWrap(False)
 			lbl.setObjectName("TodoLabel")
 			lbl.setMinimumWidth(100)  # Ensure label can expand
+			lbl.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 			font = QFont()
 			font.setPointSize(14)
 			lbl.setFont(font)
@@ -705,28 +700,45 @@ class MainWindow(QMainWindow):
 			menu_btn.setCursor(Qt.PointingHandCursor)
 			menu_btn.setFixedSize(28, 28)
 
-			lay.addWidget(check_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
 			lay.addWidget(lbl, stretch=1)
 			lay.addWidget(menu_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
 			container.setLayout(lay)
 
-			# Checkbox toggle handler
-			def on_toggle(checked_state):
+			# Track checked state internally
+			container.setProperty("checked", checked)
+
+			# Toggle handler - clicking container toggles strike-through
+			def toggle_task():
+				current_checked = container.property("checked")
+				new_checked = not current_checked
+				container.setProperty("checked", new_checked)
+				
 				fnt = lbl.font()
-				fnt.setStrikeOut(bool(checked_state))
+				fnt.setStrikeOut(new_checked)
 				lbl.setFont(fnt)
-				if checked_state:
+				if new_checked:
 					lbl.setStyleSheet("color: rgba(30,58,86,0.45);")
 				else:
 					lbl.setStyleSheet("color: #1E3A56;")
+				
 				# Update task state
 				for task in self.todo_tasks:
 					if task['widget'] is container:
-						task['checked'] = checked_state
+						task['checked'] = new_checked
 						self._save_todo_tasks()
 						break
 
-			check_btn.toggled.connect(on_toggle)
+			# Make entire container clickable
+			from PySide6.QtCore import QEvent
+			def container_click_filter(obj, event):
+				if event.type() == QEvent.MouseButtonPress:
+					# Check if click is NOT on the menu button
+					if not menu_btn.geometry().contains(event.pos()):
+						toggle_task()
+						return True
+				return False
+			
+			container.mousePressEvent = lambda event: toggle_task() if not menu_btn.geometry().contains(event.pos()) else None
 
 			# Menu actions
 			menu = QMenu()
@@ -860,25 +872,22 @@ class MainWindow(QMainWindow):
 				text = task_data['text']
 				checked = task_data.get('checked', False)
 				
-				# Create task widget (reuse the factory from _build_todo_tab)
+				# Create task widget - entire box clickable for toggle
 				container = QWidget()
 				container.setObjectName("TodoItem")
 				container.setFixedHeight(56)  # Match Add Task row height
+				container.setCursor(Qt.PointingHandCursor)  # Show it's clickable
 				
 				lay = QHBoxLayout()
-				lay.setContentsMargins(12, 0, 12, 0)
+				lay.setContentsMargins(16, 0, 12, 0)  # More padding on left for text alignment
 				lay.setSpacing(12)
 
-				check_btn = QPushButton()
-				check_btn.setCheckable(True)
-				check_btn.setFixedSize(20, 20)
-				check_btn.setObjectName("TodoCheck")
-				check_btn.setChecked(checked)
-
+				# Label - text starts from left, no checkbox
 				lbl = QLabel(text)
 				lbl.setWordWrap(False)
 				lbl.setObjectName("TodoLabel")
 				lbl.setMinimumWidth(100)  # Allow horizontal expansion
+				lbl.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 				font = QFont()
 				font.setPointSize(14)
 				lbl.setFont(font)
@@ -894,29 +903,37 @@ class MainWindow(QMainWindow):
 				menu_btn.setCursor(Qt.PointingHandCursor)
 				menu_btn.setFixedSize(28, 28)
 
-				lay.addWidget(check_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
 				lay.addWidget(lbl, stretch=1)
 				lay.addWidget(menu_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
 				container.setLayout(lay)
 
-				# Checkbox toggle
+				# Track checked state internally
+				container.setProperty("checked", checked)
+
+				# Toggle handler - clicking container toggles strike-through
 				def make_toggle_handler(container_ref, lbl_ref):
-					def on_toggle(checked_state):
+					def toggle_task():
+						current_checked = container_ref.property("checked")
+						new_checked = not current_checked
+						container_ref.setProperty("checked", new_checked)
+						
 						fnt = lbl_ref.font()
-						fnt.setStrikeOut(bool(checked_state))
+						fnt.setStrikeOut(new_checked)
 						lbl_ref.setFont(fnt)
-						if checked_state:
+						if new_checked:
 							lbl_ref.setStyleSheet("color: rgba(30,58,86,0.45);")
 						else:
 							lbl_ref.setStyleSheet("color: #1E3A56;")
+						
 						for task in self.todo_tasks:
 							if task['widget'] is container_ref:
-								task['checked'] = checked_state
+								task['checked'] = new_checked
 								self._save_todo_tasks()
 								break
-					return on_toggle
+					return toggle_task
 
-				check_btn.toggled.connect(make_toggle_handler(container, lbl))
+				toggle_func = make_toggle_handler(container, lbl)
+				container.mousePressEvent = lambda event, menu_btn_ref=menu_btn, toggle=toggle_func: toggle() if not menu_btn_ref.geometry().contains(event.pos()) else None
 
 				# Menu
 				menu = QMenu()

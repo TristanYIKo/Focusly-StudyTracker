@@ -222,15 +222,6 @@ QWidget#TodoAddRow {
     margin: 0;
 }
 
-QPushButton#TodoCheck {
-    border-radius: 10px;
-    background: transparent;
-    border: 2px solid rgba(30,58,86,0.12);
-}
-QPushButton#TodoCheck:checked {
-    background: #8FAEC4;
-    border: 2px solid #8FAEC4;
-}
 QLabel#TodoLabel {
     color: #1E3A56;
 }
