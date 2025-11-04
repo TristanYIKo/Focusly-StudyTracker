@@ -1,11 +1,41 @@
-QComboBox, QComboBox QAbstractItemView {
+QComboBox {
     color: #1E3A56;
-    background: #E2E8F0;
+    background: #F7FAFC;  /* Always lighter blue, never matches background */
     border-radius: 8px;
     font-size: 16px;
-    border: 1px solid #C9D8E2;
+    border: 2px solid #8FAEC4;  /* Colored border for visibility */
     padding: 6px 12px;
     min-width: 140px;
+}
+
+QComboBox:hover {
+    background: #F7FAFC;  /* Maintain lighter color on hover */
+    border: 2px solid #7B9BB0;  /* Darker border on hover */
+}
+
+QComboBox:focus {
+    background: #F7FAFC;  /* Keep lighter color when focused */
+    border: 2px solid #8FAEC4;
+}
+
+QComboBox:on {
+    background: #F7FAFC;  /* Keep lighter color when dropdown is open */
+    border: 2px solid #7B9BB0;
+}
+
+QComboBox:!editable:on {
+    background: #F7FAFC;  /* Ensure color stays when menu opens */
+    border: 2px solid #7B9BB0;
+}
+
+QComboBox QAbstractItemView {
+    background: #F7FAFC;
+    color: #1E3A56;
+    selection-background-color: #8FAEC4;
+    selection-color: #FFFFFF;
+    border: 2px solid #8FAEC4;
+    border-radius: 8px;
+    padding: 4px;
 }
 QTableWidget::item, QTableView::item {
     text-overflow: clip;

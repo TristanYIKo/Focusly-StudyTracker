@@ -1231,13 +1231,55 @@ class MainWindow(QMainWindow):
 			start_str = day_strs[0]
 			end_str = day_strs[-1]
 		conn.close()
+		
+		# Apply modern matplotlib styling
+		import matplotlib.pyplot as plt
+		plt.style.use('seaborn-v0_8-whitegrid')
+		
 		self.figure.clear()
+		# Set figure background to match app theme
+		self.figure.patch.set_facecolor('#E2E8F0')
+		self.figure.patch.set_alpha(0.0)  # Transparent to blend with app
+		
 		ax = self.figure.add_subplot(111)
-		ax.bar(x, y, color="#5EA1FF")
-		ax.set_ylabel("Hours Studied")
-		ax.set_xlabel(xlabel)
-		ax.set_title(f"Study Time by {xlabel}")
+		# Set axis background
+		ax.set_facecolor('#F7FAFC')
+		
+		# Modern color palette - gradient blue matching app theme
+		bars = ax.bar(x, y, color='#8FAEC4', edgecolor='#7B9BB0', linewidth=1.5, alpha=0.9)
+		
+		# Add value labels on top of bars for better readability
+		for i, (bar, value) in enumerate(zip(bars, y)):
+			if value > 0:
+				ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.05,
+				       f'{value:.1f}h', ha='center', va='bottom', 
+				       fontsize=9, fontweight='600', color='#1E3A56')
+		
+		# Styling
+		ax.set_ylabel("Hours Studied", fontsize=12, fontweight='600', color='#1E3A56', labelpad=10)
+		ax.set_xlabel(xlabel, fontsize=12, fontweight='600', color='#1E3A56', labelpad=10)
+		ax.set_title(f"Study Time by {xlabel}", fontsize=14, fontweight='bold', 
+		            color='#1E3A56', pad=15)
 		ax.set_ylim(bottom=0)
+		
+		# Grid styling - soft transparency
+		ax.grid(True, axis='y', alpha=0.25, linestyle='--', linewidth=0.8, color='#C9D8E2')
+		ax.set_axisbelow(True)  # Grid behind bars
+		
+		# Tick styling
+		ax.tick_params(axis='both', colors='#1E3A56', labelsize=10)
+		
+		# Spine styling - cleaner look
+		for spine in ['top', 'right']:
+			ax.spines[spine].set_visible(False)
+		for spine in ['bottom', 'left']:
+			ax.spines[spine].set_color('#C9D8E2')
+			ax.spines[spine].set_linewidth(1.2)
+		
+		# Rotate x-labels if month view for better readability
+		if tf == "month" and len(x) > 15:
+			ax.tick_params(axis='x', rotation=45)
+		
 		self.figure.tight_layout()
 		self.canvas.draw()
 		# update the centered period label (This Week / Last Week / date)
