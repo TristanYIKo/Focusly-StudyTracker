@@ -149,12 +149,81 @@ QLabel#TimerLabel {
     color: #1E3A56;
     font-size: 112px;
     font-weight: bold;
-    background: #C9D8E2;
+    background: #FFFFFF;
     border-radius: 32px;
     padding: 40px 64px;
     margin: 0 0 32px 0;
     letter-spacing: 2px;
     box-shadow: 0 6px 22px 0 rgba(30,58,86,0.06);
+}
+
+/* Timer and Pomodoro card containers - always white background */
+QWidget#TimerCard {
+    background: #FFFFFF;
+    border-radius: 32px;
+    padding: 32px;
+}
+
+/* Summary cards for streak and total days */
+QWidget#SummaryCard {
+    background: #FFFFFF;
+    border-radius: 16px;
+    padding: 24px;
+    min-width: 200px;
+    box-shadow: 0 4px 16px 0 rgba(30,58,86,0.08);
+}
+
+/* Graph container with white background */
+QWidget#GraphContainer {
+    background: #FFFFFF;
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: 0 4px 16px 0 rgba(30,58,86,0.08);
+}
+
+QLabel#SummaryValue {
+    color: #1E3A56;
+    font-size: 48px;
+    font-weight: bold;
+}
+
+QLabel#SummaryTitle {
+    color: #7B9BB0;
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* Navigation pill for history period selector */
+QWidget#HistoryNavPill {
+    background: #F7FAFC;
+    border-radius: 16px;
+    padding: 8px 16px;
+}
+
+QLabel#HistPeriodLabel {
+    color: #1E3A56;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 0 16px;
+    min-width: 120px;
+}
+
+QPushButton#NavBtn {
+    background: transparent;
+    border: none;
+    color: #7B9BB0;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+QPushButton#NavBtn:hover {
+    color: #1E3A56;
+}
+
+QPushButton#NavBtn:disabled {
+    color: #C9D8E2;
 }
 QPushButton#MenuBtn {
     min-width: 0;

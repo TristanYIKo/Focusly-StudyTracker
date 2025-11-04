@@ -55,6 +55,7 @@ class MainWindow(QMainWindow):
 		self.sidebar.addItem(QListWidgetItem("Timer"))
 		self.sidebar.addItem(QListWidgetItem("Pomodoro"))
 		self.sidebar.addItem(QListWidgetItem("Study History"))
+		self.sidebar.addItem(QListWidgetItem("Raw Data"))
 		self.sidebar.addItem(QListWidgetItem("To-Do"))
 		self.sidebar.setCurrentRow(0)
 		self.sidebar.setMaximumWidth(0)
@@ -102,10 +103,12 @@ class MainWindow(QMainWindow):
 		self.timer_tab = self._build_timer_tab()
 		self.pomodoro_tab = self._build_pomodoro_tab()
 		self.history_tab = self._build_history_tab()
+		self.raw_data_tab = self._build_raw_data_tab()
 		self.todo_tab = self._build_todo_tab()
 		self.stack.addWidget(self.timer_tab)
 		self.stack.addWidget(self.pomodoro_tab)
 		self.stack.addWidget(self.history_tab)
+		self.stack.addWidget(self.raw_data_tab)
 		self.stack.addWidget(self.todo_tab)
 
 		main_layout = QHBoxLayout()
@@ -444,6 +447,66 @@ class MainWindow(QMainWindow):
 		# Match margins used elsewhere for consistent visual rhythm
 		layout.setContentsMargins(32, 32, 32, 32)
 
+		# Summary stats at the top - add left margin to avoid menu button overlap
+		summary_layout = QHBoxLayout()
+		summary_layout.setContentsMargins(70, 0, 0, 0)  # 70px left margin (menu button is 50px + spacing)
+		summary_layout.setSpacing(24)
+		
+		# Daily Streak card
+		streak_card = QWidget()
+		streak_card.setObjectName("SummaryCard")
+		streak_layout = QVBoxLayout()
+		streak_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+		streak_layout.setSpacing(8)
+		self.streak_value_label = QLabel("0")
+		self.streak_value_label.setObjectName("SummaryValue")
+		self.streak_value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+		streak_title = QLabel("Daily Streak")
+		streak_title.setObjectName("SummaryTitle")
+		streak_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+		streak_layout.addWidget(self.streak_value_label)
+		streak_layout.addWidget(streak_title)
+		streak_card.setLayout(streak_layout)
+		
+		# Total Days Studied card
+		total_card = QWidget()
+		total_card.setObjectName("SummaryCard")
+		total_layout = QVBoxLayout()
+		total_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+		total_layout.setSpacing(8)
+		self.total_days_value_label = QLabel("0")
+		self.total_days_value_label.setObjectName("SummaryValue")
+		self.total_days_value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+		total_title = QLabel("Total Days Studied")
+		total_title.setObjectName("SummaryTitle")
+		total_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+		total_layout.addWidget(self.total_days_value_label)
+		total_layout.addWidget(total_title)
+		total_card.setLayout(total_layout)
+		
+		# Total Hours Studied card
+		hours_card = QWidget()
+		hours_card.setObjectName("SummaryCard")
+		hours_layout = QVBoxLayout()
+		hours_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+		hours_layout.setSpacing(8)
+		self.total_hours_value_label = QLabel("0h")
+		self.total_hours_value_label.setObjectName("SummaryValue")
+		self.total_hours_value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+		hours_title = QLabel("Total Hours Studied")
+		hours_title.setObjectName("SummaryTitle")
+		hours_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+		hours_layout.addWidget(self.total_hours_value_label)
+		hours_layout.addWidget(hours_title)
+		hours_card.setLayout(hours_layout)
+		
+		summary_layout.addWidget(streak_card)
+		summary_layout.addWidget(total_card)
+		summary_layout.addWidget(hours_card)
+		summary_layout.addStretch()
+		layout.addLayout(summary_layout)
+		layout.addSpacing(24)
+
 		# Time frame selector - place it at the right side for better balance.
 		timeframe_layout = QHBoxLayout()
 		# Push widgets to the right
@@ -470,21 +533,19 @@ class MainWindow(QMainWindow):
 		self.hist_period_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 		layout.addLayout(timeframe_layout)
 
-		# Bar chart (matplotlib)
-		self.figure = Figure(figsize=(5, 2.5))
+		# Bar chart (matplotlib) - increased height to prevent title cutoff
+		# Wrap in a container for proper spacing
+		graph_container = QWidget()
+		graph_container.setObjectName("GraphContainer")
+		graph_layout = QVBoxLayout()
+		graph_layout.setContentsMargins(16, 16, 16, 16)  # Add padding around graph
+		self.figure = Figure(figsize=(10, 5))
 		self.canvas = FigureCanvas(self.figure)
-		layout.addWidget(self.canvas)
-
-		# Table
-		self.history_table = QTableWidget()
-		self.history_table.setColumnCount(6)
-		self.history_table.setHorizontalHeaderLabels([
-			"Date", "Start (UTC)", "End (UTC)", "Duration", "Subject", "Source"
-		])
-		self.history_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-		self.history_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-		self.history_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-		layout.addWidget(self.history_table)
+		self.canvas.setMinimumHeight(400)  # Ensure adequate height
+		graph_layout.addWidget(self.canvas)
+		graph_container.setLayout(graph_layout)
+		layout.addWidget(graph_container)
+		
 		w.setLayout(layout)
 		# history navigation state: 0 == current period, 1 == previous, etc.
 		self.history_offset = 0
@@ -520,6 +581,86 @@ class MainWindow(QMainWindow):
 		self.history_offset = 0
 		self._refresh_history()
 		self._update_bar_chart()
+		self._update_summary_stats()
+		return w
+
+	def _build_raw_data_tab(self):
+		"""Build the Raw Data tab - mirrors Study History layout but only shows the data table."""
+		w = QWidget()
+		layout = QVBoxLayout()
+		layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+		layout.setContentsMargins(32, 32, 32, 32)
+
+		# Time frame selector - place it at the right side
+		timeframe_layout = QHBoxLayout()
+		timeframe_layout.addStretch()
+		timeframe_label = QLabel("Show study time for:")
+		self.raw_timeframe_combo = QComboBox()
+		self.raw_timeframe_combo.addItems(["Week", "Month"])
+		self.raw_timeframe_combo.setCurrentIndex(0)  # Default to Week
+		self.raw_timeframe_combo.setMinimumWidth(140)
+		timeframe_layout.addWidget(timeframe_label)
+		timeframe_layout.addWidget(self.raw_timeframe_combo)
+		
+		# Prev/Next controls
+		from PySide6.QtWidgets import QPushButton
+		self.raw_prev_btn = QPushButton("◀")
+		self.raw_prev_btn.setFixedSize(28, 28)
+		self.raw_prev_btn.setObjectName("NavBtn")
+		self.raw_next_btn = QPushButton("▶")
+		self.raw_next_btn.setFixedSize(28, 28)
+		self.raw_next_btn.setObjectName("NavBtn")
+		# center pill label
+		self.raw_period_label = QLabel("")
+		self.raw_period_label.setObjectName("HistPeriodLabel")
+		self.raw_period_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+		layout.addLayout(timeframe_layout)
+
+		# Create centered pill containing prev button, period label, next button
+		nav_pill = QWidget()
+		nav_pill.setObjectName('HistoryNavPill')
+		nav_layout = QHBoxLayout()
+		nav_layout.setContentsMargins(8, 6, 8, 6)
+		nav_layout.setSpacing(8)
+		nav_pill.setLayout(nav_layout)
+		nav_layout.addWidget(self.raw_prev_btn)
+		nav_layout.addWidget(self.raw_period_label)
+		nav_layout.addWidget(self.raw_next_btn)
+
+		# Center the pill in its own horizontal row
+		nav_row = QHBoxLayout()
+		nav_row.addStretch()
+		nav_row.addWidget(nav_pill)
+		nav_row.addStretch()
+		layout.addLayout(nav_row)
+
+		# Data table
+		self.raw_data_table = QTableWidget()
+		self.raw_data_table.setColumnCount(6)
+		self.raw_data_table.setHorizontalHeaderLabels([
+			"Date", "Start (UTC)", "End (UTC)", "Duration", "Subject", "Source"
+		])
+		self.raw_data_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+		self.raw_data_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+		self.raw_data_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+		layout.addWidget(self.raw_data_table)
+		w.setLayout(layout)
+		
+		# raw data navigation state: 0 == current period, 1 == previous, etc.
+		self.raw_data_offset = 0
+
+		def _on_raw_timeframe_changed(i):
+			# reset offset when switching timeframe
+			self.raw_data_offset = 0
+			self._update_raw_data()
+
+		self.raw_timeframe_combo.currentIndexChanged.connect(_on_raw_timeframe_changed)
+		self.raw_prev_btn.clicked.connect(lambda: (setattr(self, 'raw_data_offset', self.raw_data_offset + 1), self._update_raw_data()))
+		self.raw_next_btn.clicked.connect(lambda: (setattr(self, 'raw_data_offset', max(0, self.raw_data_offset - 1)), self._update_raw_data()))
+
+		# populate initial view
+		self.raw_data_offset = 0
+		self._update_raw_data()
 		return w
 
 	def _build_pomodoro_tab(self):
@@ -848,8 +989,8 @@ class MainWindow(QMainWindow):
 			
 			with open(tasks_file, 'w', encoding='utf-8') as f:
 				json.dump({'tasks': tasks_data}, f, indent=2)
-		except Exception as e:
-			print(f"Failed to save tasks: {e}")
+		except Exception:
+			pass
 
 	def _load_todo_tasks(self):
 		"""Load tasks from persistent storage on startup."""
@@ -975,8 +1116,8 @@ class MainWindow(QMainWindow):
 					'checked': checked,
 					'widget': container
 				})
-		except Exception as e:
-			print(f"Failed to load tasks: {e}")
+		except Exception:
+			pass
 
 
 	def _pomo_start_pause(self):
@@ -1002,6 +1143,7 @@ class MainWindow(QMainWindow):
 				self.pomo_session_id = None
 				# update UI and graphs
 				self._update_today_label()
+				self._update_summary_stats()
 				self._refresh_history()
 				if hasattr(self, '_update_bar_chart'):
 					self._update_bar_chart()
@@ -1020,6 +1162,7 @@ class MainWindow(QMainWindow):
 			self.pomo_session_id = None
 			# update UI and graphs
 			self._update_today_label()
+			self._update_summary_stats()
 			self._refresh_history()
 			if hasattr(self, '_update_bar_chart'):
 				self._update_bar_chart()
@@ -1049,6 +1192,7 @@ class MainWindow(QMainWindow):
 					self.pomo_session_id = None
 					# update UI and graphs
 					self._update_today_label()
+					self._update_summary_stats()
 					self._refresh_history()
 					if hasattr(self, '_update_bar_chart'):
 						self._update_bar_chart()
@@ -1120,6 +1264,7 @@ class MainWindow(QMainWindow):
 					self.pomo_session_id = None
 					# update graphs/UI
 					self._update_today_label()
+					self._update_summary_stats()
 					self._refresh_history()
 					if hasattr(self, '_update_bar_chart'):
 						self._update_bar_chart()
@@ -1280,7 +1425,8 @@ class MainWindow(QMainWindow):
 		if tf == "month" and len(x) > 15:
 			ax.tick_params(axis='x', rotation=45)
 		
-		self.figure.tight_layout()
+		# Add extra padding to prevent title/label cutoff
+		self.figure.tight_layout(pad=2.0)
 		self.canvas.draw()
 		# update the centered period label (This Week / Last Week / date)
 		try:
@@ -1304,11 +1450,6 @@ class MainWindow(QMainWindow):
 				self.hist_period_label.setText(label_text)
 		except Exception:
 			pass
-		# update table to show sessions for the same date range
-		try:
-			self._refresh_history(start_str, end_str)
-		except Exception:
-			pass
 		# enable/disable forward (next) button when at current period
 		try:
 			if hasattr(self, 'hist_next_btn'):
@@ -1326,6 +1467,7 @@ class MainWindow(QMainWindow):
 		if state in ("idle", "stopped"):
 			self.timer_label.setText("00:00:00")
 			self._update_today_label()
+			self._update_summary_stats()
 			self._refresh_history()
 
 
@@ -1369,30 +1511,28 @@ class MainWindow(QMainWindow):
 		if hasattr(self, 'footer_today'):
 			self.footer_today.set_today(f"Today: {total_sec // 60}m")
 
+	def _update_summary_stats(self):
+		"""Update the Daily Streak, Total Days Studied, and Total Hours Studied labels."""
+		try:
+			streak = session_repo.get_daily_streak()
+			total_days = session_repo.get_total_days_studied()
+			total_hours = session_repo.get_total_hours_studied()
+			
+			if hasattr(self, 'streak_value_label'):
+				self.streak_value_label.setText(str(streak))
+			if hasattr(self, 'total_days_value_label'):
+				self.total_days_value_label.setText(str(total_days))
+			if hasattr(self, 'total_hours_value_label'):
+				# Format hours nicely (e.g., "12.5h" or "120.2h")
+				self.total_hours_value_label.setText(f"{total_hours:.1f}h")
+		except Exception:
+			pass
+
 	def _refresh_history(self, start_date=None, end_date=None):
-		# Populate the history table. If start_date and end_date (YYYY-MM-DD)
-		# are provided, only show sessions in that inclusive range.
-		if start_date is None or end_date is None:
-			sessions = self._get_sessions()
-		else:
-			# query sessions in range
-			with session_repo.connect() as conn:
-				cur = conn.execute(
-					"SELECT local_date, start_utc, end_utc, duration_sec, subject, source "
-					"FROM sessions WHERE local_date BETWEEN ? AND ? ORDER BY start_utc DESC",
-					(start_date, end_date)
-				)
-				sessions = [dict(row) for row in cur.fetchall()]
-		self.history_table.setRowCount(len(sessions))
-		for row, sess in enumerate(sessions):
-			self.history_table.setItem(row, 0, QTableWidgetItem(sess["local_date"]))
-			self.history_table.setItem(row, 1, QTableWidgetItem(sess["start_utc"]))
-			self.history_table.setItem(row, 2, QTableWidgetItem(sess.get("end_utc") or ""))
-			dur = fmt_hms(sess["duration_sec"] or 0) if sess.get("duration_sec") is not None else ""
-			self.history_table.setItem(row, 3, QTableWidgetItem(dur))
-			self.history_table.setItem(row, 4, QTableWidgetItem(sess.get("subject") or ""))
-			# Source: 'timer' or 'pomodoro'
-			self.history_table.setItem(row, 5, QTableWidgetItem(sess.get("source", "timer")))
+		# This method is now just a placeholder for compatibility.
+		# The Study History tab no longer has a table - only graphs.
+		# The Raw Data tab has its own update method.
+		pass
 
 	def _get_sessions(self):
 		with session_repo.connect() as conn:
@@ -1400,6 +1540,74 @@ class MainWindow(QMainWindow):
 				"SELECT local_date, start_utc, end_utc, duration_sec, subject, source FROM sessions ORDER BY start_utc DESC"
 			)
 			return [dict(row) for row in cur.fetchall()]
+
+	def _update_raw_data(self):
+		"""Update the Raw Data tab with sessions for the selected period."""
+		import calendar
+		import sqlite3
+		from BackEnd.core.paths import db_path
+		
+		tf = self.raw_timeframe_combo.currentText().lower()
+		now = datetime.datetime.now()
+		offset = getattr(self, 'raw_data_offset', 0)
+		
+		# Calculate date range based on timeframe and offset
+		if tf == "week":
+			start_of_week = (now - datetime.timedelta(days=now.weekday())) - datetime.timedelta(weeks=offset)
+			days = [(start_of_week + datetime.timedelta(days=i)).date() for i in range(7)]
+			start_str = days[0].isoformat()
+			end_str = days[-1].isoformat()
+		else:  # month
+			year = now.year
+			month = now.month - offset
+			while month <= 0:
+				month += 12
+				year -= 1
+			num_days = calendar.monthrange(year, month)[1]
+			days = [datetime.date(year, month, i+1) for i in range(num_days)]
+			start_str = days[0].isoformat()
+			end_str = days[-1].isoformat()
+		
+		# Update period label
+		label_text = ""
+		if tf == "week":
+			if offset == 0:
+				label_text = "This Week"
+			elif offset == 1:
+				label_text = "Last Week"
+			else:
+				label_text = datetime.date.fromisoformat(start_str).strftime("%b-%d-%Y")
+		else:
+			if offset == 0:
+				label_text = "This Month"
+			elif offset == 1:
+				label_text = "Last Month"
+			else:
+				label_text = datetime.date.fromisoformat(start_str).strftime("%b-%d-%Y")
+		self.raw_period_label.setText(label_text)
+		
+		# Query sessions in range
+		with session_repo.connect() as conn:
+			cur = conn.execute(
+				"SELECT local_date, start_utc, end_utc, duration_sec, subject, source "
+				"FROM sessions WHERE local_date BETWEEN ? AND ? ORDER BY start_utc DESC",
+				(start_str, end_str)
+			)
+			sessions = [dict(row) for row in cur.fetchall()]
+		
+		# Populate table
+		self.raw_data_table.setRowCount(len(sessions))
+		for row, sess in enumerate(sessions):
+			self.raw_data_table.setItem(row, 0, QTableWidgetItem(sess["local_date"]))
+			self.raw_data_table.setItem(row, 1, QTableWidgetItem(sess["start_utc"]))
+			self.raw_data_table.setItem(row, 2, QTableWidgetItem(sess.get("end_utc") or ""))
+			dur = fmt_hms(sess["duration_sec"] or 0) if sess.get("duration_sec") is not None else ""
+			self.raw_data_table.setItem(row, 3, QTableWidgetItem(dur))
+			self.raw_data_table.setItem(row, 4, QTableWidgetItem(sess.get("subject") or ""))
+			self.raw_data_table.setItem(row, 5, QTableWidgetItem(sess.get("source", "timer")))
+		
+		# Enable/disable forward (next) button when at current period
+		self.raw_next_btn.setEnabled(getattr(self, 'raw_data_offset', 0) > 0)
 
 	def _check_resume_session(self):
 		# Resume prompts are disabled. Previously unfinished sessions are

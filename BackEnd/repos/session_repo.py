@@ -92,3 +92,60 @@ def today_total_seconds():
 		)
 		row = cur.fetchone()
 		return row["total"] if row else 0
+
+def get_daily_streak():
+	"""
+	Calculate the current daily streak - consecutive days with study sessions.
+	Returns 0 if the user skipped a full day (from 12 AM to 12 AM).
+	"""
+	import datetime
+	today = datetime.date.today()
+	with connect() as conn:
+		# Get all unique dates with completed sessions, ordered descending
+		cur = conn.execute(
+			"SELECT DISTINCT local_date FROM sessions WHERE duration_sec IS NOT NULL AND duration_sec > 0 ORDER BY local_date DESC"
+		)
+		dates = [datetime.date.fromisoformat(row["local_date"]) for row in cur.fetchall()]
+	
+	if not dates:
+		return 0
+	
+	# Check if today has any study time - if not, streak is 0
+	if today not in dates:
+		return 0
+	
+	# Count consecutive days backwards from today
+	streak = 0
+	current_date = today
+	for study_date in dates:
+		if study_date == current_date:
+			streak += 1
+			current_date -= datetime.timedelta(days=1)
+		elif study_date < current_date:
+			# Gap found - streak broken
+			break
+	
+	return streak
+
+def get_total_days_studied():
+	"""
+	Returns the total number of unique days the user has studied since using the app.
+	"""
+	with connect() as conn:
+		cur = conn.execute(
+			"SELECT COUNT(DISTINCT local_date) as total FROM sessions WHERE duration_sec IS NOT NULL AND duration_sec > 0"
+		)
+		row = cur.fetchone()
+		return row["total"] if row else 0
+
+def get_total_hours_studied():
+	"""
+	Returns the total hours studied across all sessions since using the app.
+	"""
+	with connect() as conn:
+		cur = conn.execute(
+			"SELECT COALESCE(SUM(duration_sec), 0) as total FROM sessions WHERE duration_sec IS NOT NULL AND duration_sec > 0"
+		)
+		row = cur.fetchone()
+		total_seconds = row["total"] if row else 0
+		return total_seconds / 3600.0  # Convert to hours
