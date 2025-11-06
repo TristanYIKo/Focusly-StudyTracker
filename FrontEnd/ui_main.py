@@ -19,7 +19,8 @@ class MainWindow(QMainWindow):
 		self.resize(1000, 650)
 
 		# Apply QSS stylesheet for the new design system
-		with open('FrontEnd/styles/studytracker.qss', 'r', encoding='utf-8') as f:
+		qss_path = resource_path("FrontEnd/styles/studytracker.qss")
+		with open(qss_path, "r") as f:
 			self.setStyleSheet(f.read())
 
 		# --- Menu Button (Hamburger) ---
