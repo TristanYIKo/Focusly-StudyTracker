@@ -10,6 +10,7 @@ from BackEnd.services.timer_service import TimerService
 from BackEnd.repos import session_repo
 from BackEnd.core.clock import fmt_hms
 from FrontEnd.styles.design_tokens import COLORS, FONTS
+from FrontEnd.resource_helper import resource_path
 
 
 class MainWindow(QMainWindow):
